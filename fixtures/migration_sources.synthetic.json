@@ -1,0 +1,17 @@
+[
+  {
+    "source_id": "synthetic-mosquitto-001",
+    "source_type": "mosquitto_mirror",
+    "config": {"host": "synthetic-broker.local", "port": 8883, "topics": ["synthetic/tanks/#"]}
+  },
+  {
+    "source_id": "synthetic-postgres-001",
+    "source_type": "postgres_history",
+    "config": {"schema": "synthetic_tank_history", "table": "synthetic_measurements"}
+  },
+  {
+    "source_id": "synthetic-thingsboard-001",
+    "source_type": "thingsboard",
+    "config": {"tenant": "synthetic-tenant-a", "export_bundle": "synthetic-export-2026-01-01.zip"}
+  }
+]
