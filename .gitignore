@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.venv/
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.tfstate*
+.terraform/
+exports/
+dumps/
+secrets/
+.coverage
+coverage/

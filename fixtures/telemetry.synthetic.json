@@ -1,0 +1,22 @@
+[
+  {
+    "schema_version": 1,
+    "event_type": "TelemetryAccepted",
+    "event_id": "synthetic-event-001",
+    "tenant_id": "synthetic-tenant-a",
+    "device_id": "synthetic-device-001",
+    "occurred_at": "2026-01-01T00:00:00Z",
+    "correlation_id": "synthetic-correlation-001",
+    "payload": {"level_percent": 62.5, "temperature_c": 21.2, "battery_percent": 87}
+  },
+  {
+    "schema_version": 1,
+    "event_type": "TelemetryAccepted",
+    "event_id": "synthetic-event-002",
+    "tenant_id": "synthetic-tenant-b",
+    "device_id": "synthetic-device-001",
+    "occurred_at": "2026-01-01T00:01:00Z",
+    "correlation_id": "synthetic-correlation-002",
+    "payload": {"level_percent": 0, "temperature_c": -5, "battery_percent": 100}
+  }
+]

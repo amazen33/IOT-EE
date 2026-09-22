@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "stage": "M0",
+  "mode": "offline-validation",
+  "provisioning_enabled": false,
+  "legacy_import_enabled": false,
+  "resources": [],
+  "secret_refs": []
+}
