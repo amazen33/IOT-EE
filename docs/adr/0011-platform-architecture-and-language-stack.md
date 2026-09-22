@@ -148,7 +148,26 @@ reapply-the-customization-set exercise, not a re-implementation.
   claim atomicity between ThingsBoard and Kafka).
 - **Storage**: PostgreSQL (OLTP) + MinIO/S3 with Object Lock (WORM) +
   an eventstream database.
-- **Observability**: LGTM (Loki/Grafana/Tempo/Mimir).
+- **Observability**: LGTM (Loki/Grafana/Tempo/Mimir) is the
+  platform-wide observability layer -- complementary to, not a
+  replacement for, TB CE's own built-in monitoring
+  (`MONITORING_ENABLED=true`, `ThingsboardMonitoringApplication`,
+  Prometheus + Grafana, and Rule Engine alerting), which observes only
+  TB CE's own process health and is not reconfigured or removed by this
+  decision. TB CE's built-in stack has no visibility into anything
+  outside TB CE itself: not the Java `services/*` applications, not the
+  Kafka backbone, not the APISIX gateway, and not the Python RAG/AI
+  platform. LGTM is what actually sees the whole platform: TB CE's own
+  Prometheus metrics are federated into it via remote-write to Mimir
+  (rather than living in an island Grafana only TB CE feeds), every
+  service's logs aggregate into Loki, and Tempo carries a trace across
+  the full request path -- including across the TB CE -> Kafka -> AI
+  platform boundary, which is exactly the boundary TB CE's own
+  monitoring cannot cross. Concretely: the AI/RAG platform integration
+  (Decision 1) has no observability at all without LGTM, since TB CE's
+  stack structurally cannot see a Python service on the other side of
+  Kafka -- LGTM is a requirement for that integration to be observable,
+  not an optional add-on alongside TB CE's own dashboards.
 - **Mesh/load balancing**: Istio; L3/L4/L7.
 - **Inter-service transport**: gRPC internally; REST + Spring Cloud
   LoadBalancer for external HTTP.
