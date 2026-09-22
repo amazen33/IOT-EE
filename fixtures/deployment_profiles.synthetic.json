@@ -1,0 +1,34 @@
+{
+  "profiles": [
+    {
+      "profile_id": "synthetic-profile-onprem-dev",
+      "tenant_id": "synthetic-tenant-a",
+      "environment": "dev",
+      "provider": "on_prem",
+      "region": "on_prem_primary",
+      "tier": "standard",
+      "capabilities": ["kubernetes", "apisix", "postgresql"],
+      "effective_from": "2026-01-01T00:00:00Z",
+      "rpo_seconds": null,
+      "rto_seconds": null,
+      "approved": false,
+      "approved_by": null,
+      "approved_at": null
+    },
+    {
+      "profile_id": "synthetic-profile-cloud-prod",
+      "tenant_id": "synthetic-tenant-a",
+      "environment": "prod",
+      "provider": "aws",
+      "region": "aws_us_east_1",
+      "tier": "high_availability",
+      "capabilities": ["kubernetes", "apisix", "postgresql", "kafka"],
+      "effective_from": "2026-01-01T00:00:00Z",
+      "rpo_seconds": 300,
+      "rto_seconds": 1800,
+      "approved": true,
+      "approved_by": "synthetic-admin-001",
+      "approved_at": "2026-01-02T00:00:00Z"
+    }
+  ]
+}
