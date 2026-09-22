@@ -28,6 +28,13 @@ _FORBIDDEN_IMPORTS_FOR_DOMAIN_MODULES = {
 
 _POLICY_CHECKED_PACKAGES = ("migration_studio", "domain_core")
 
+# M7: core packages that must never depend on billing -- a billing
+# failure must never be able to reach these. Enforced mechanically by
+# _check_billing_isolation, not just documented.
+_CORE_PACKAGES_FORBIDDEN_FROM_IMPORTING_BILLING = (
+    "domain_core", "migration_studio", "ingestion", "gateway", "reporting", "firmware", "evidence",
+)
+
 
 def _check_required_artifacts():
     required = [
@@ -135,6 +142,24 @@ def _check_required_artifacts():
         "tests/test_evidence_capture.py",
         "tests/test_evidence_legal_hold.py",
         "tests/test_evidence_dr.py",
+        # M7 (optional monetization behind a runtime feature flag; see
+        # CLAUDE.md's milestone list and docs/adr/0008-m7-monetization.md)
+        "docs/adr/0008-m7-monetization.md",
+        "docs/billing.md",
+        "billing/__init__.py",
+        "billing/flags.py",
+        "billing/metering.py",
+        "billing/pricing.py",
+        "billing/closure.py",
+        "billing/service.py",
+        "fixtures/billing.synthetic.json",
+        "tests/test_billing_flags.py",
+        "tests/test_billing_metering.py",
+        "tests/test_billing_pricing.py",
+        "tests/test_billing_closure.py",
+        "tests/test_billing_service.py",
+        "tests/test_billing_flag_matrix.py",
+        "tests/test_billing_fixture.py",
     ]
     for name in required:
         if not (ROOT / name).is_file() or not (ROOT / name).stat().st_size:
@@ -275,6 +300,45 @@ def _check_m6_evidence_policy():
             raise ValueError("Evidence-record fixture tenant ids must be synthetic")
 
 
+def _check_billing_isolation():
+    """Mechanically enforce M7's billing-outage isolation requirement:
+    no other domain package may import billing at all. Billing can only
+    be reached through billing.flags.MonetizationFlags.is_monetization_enabled,
+    never by a core package reaching into billing directly."""
+    for package_name in _CORE_PACKAGES_FORBIDDEN_FROM_IMPORTING_BILLING:
+        for py_file in sorted((ROOT / package_name).glob("*.py")):
+            tree = ast.parse(py_file.read_text(), filename=str(py_file))
+            for node in ast.walk(tree):
+                names = []
+                if isinstance(node, ast.Import):
+                    names = [alias.name.split(".")[0] for alias in node.names]
+                elif isinstance(node, ast.ImportFrom) and node.module:
+                    names = [node.module.split(".")[0]]
+                if "billing" in names:
+                    raise ValueError(
+                        f"{py_file.relative_to(ROOT)} imports 'billing'; core packages must never "
+                        "depend on billing (see docs/adr/0008-m7-monetization.md)"
+                    )
+
+
+def _check_m7_billing_policy():
+    # billing/ is M7's new package: monetization behind a runtime feature
+    # flag. Same no-network/process-import policy as every prior domain
+    # package, plus the mechanical isolation check above.
+    _check_no_forbidden_imports("billing")
+    _check_billing_isolation()
+
+    fixture = json.loads((ROOT / "fixtures/billing.synthetic.json").read_text())
+    for entry in fixture.get("tenant_overrides", []):
+        if not entry.get("tenant_id", "").startswith("synthetic-"):
+            raise ValueError("Billing fixture tenant ids must be synthetic")
+    if not fixture.get("price_plans"):
+        raise ValueError("Synthetic billing price-plan fixture entries required")
+    for entry in fixture["price_plans"]:
+        if not entry.get("plan_id", "").startswith("synthetic-"):
+            raise ValueError("Billing fixture plan ids must be synthetic")
+
+
 def main():
     _check_required_artifacts()
     _check_m0_inert_plan_and_fixtures()
@@ -284,6 +348,7 @@ def main():
     _check_m4_gateway_reporting_policy()
     _check_m5_firmware_policy()
     _check_m6_evidence_policy()
+    _check_m7_billing_policy()
 
     suite = unittest.defaultTestLoader.discover(str(ROOT / "tests"))
     if suite.countTestCases() == 0:

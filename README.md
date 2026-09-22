@@ -85,4 +85,14 @@ required review checks before collaborative delivery.
   restore execution, cross-region failover, fault injection, or
   load/soak testing exists yet — see
   [`docs/evidence.md`](docs/evidence.md).
-- M7 onward: not started.
+- **M7 — optional monetization behind a runtime feature flag done, real payment/tax blocked**:
+  a default-off, per-tenant-overridable monetization flag as the single
+  gate for all billing side effects; certified (active) device-count
+  metering; effective-dated, versioned price plans; immutable period
+  closure with reversal-only correction; and a mechanical import-scan
+  rule (`scripts/check.py`) proving no other bounded context can ever
+  depend on billing. Disabling the flag leaves every other feature fully
+  available -- there is no feature-entitlement check anywhere in this
+  package. No real payment provider, invoicing, or tax/currency handling
+  exists yet -- see [`docs/billing.md`](docs/billing.md).
+- M8 onward: not started.

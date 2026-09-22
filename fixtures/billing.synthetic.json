@@ -1,0 +1,21 @@
+{
+  "global_default_enabled": false,
+  "tenant_overrides": [
+    {"tenant_id": "synthetic-tenant-billed", "enabled": true},
+    {"tenant_id": "synthetic-tenant-exempt", "enabled": false}
+  ],
+  "price_plans": [
+    {
+      "plan_id": "synthetic-plan-standard",
+      "price_per_device": 2.5,
+      "currency": "USD",
+      "effective_from": "2026-01-01T00:00:00Z"
+    },
+    {
+      "plan_id": "synthetic-plan-standard",
+      "price_per_device": 3.0,
+      "currency": "USD",
+      "effective_from": "2026-06-01T00:00:00Z"
+    }
+  ]
+}
