@@ -1,4 +1,4 @@
-# SpectroTANK modernization
+# IOT-EE
 
 M0 foundation only. No legacy access, exports, rule parity, infrastructure, or production implementation has been verified. Existing root images and Multipass scripts are unverified reference inputs, preserved unchanged. The scripts provision machines and replace guest hosts files; they are not part of the supported deployment or test path and must not be executed by CI.
 
