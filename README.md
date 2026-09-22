@@ -74,4 +74,15 @@ required review checks before collaborative delivery.
   device secure-boot chain, build-system provenance verification, or
   firmware download/flashing transport exists yet — see
   [`docs/firmware.md`](docs/firmware.md).
-- M6 onward: not started.
+- **M6 — immutable evidence/legal-hold/replay-reconciliation done, real WORM/DR blocked**:
+  a provider-neutral WORM store contract for the audit/compliance trail
+  (RBAC decisions, firmware rollout/rollback events, shadow-parity
+  comparisons), redaction and content-hash integrity checks on every
+  evidence record, an RBAC-gated legal-hold flag that structurally
+  blocks retention deletion, and a replay/reconciliation procedure that
+  rebuilds a read-model from durable events against documented
+  per-tenant RPO/RTO targets. No real WORM/object-lock backend, backup/
+  restore execution, cross-region failover, fault injection, or
+  load/soak testing exists yet — see
+  [`docs/evidence.md`](docs/evidence.md).
+- M7 onward: not started.

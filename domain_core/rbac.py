@@ -42,6 +42,7 @@ PERMISSION_CATALOG = frozenset(
         "reports.publish",
         "rules.manage",
         "firmware.manage",
+        "evidence.legal_hold",
     }
 )
 

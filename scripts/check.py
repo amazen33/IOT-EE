@@ -119,6 +119,22 @@ def _check_required_artifacts():
         "tests/test_firmware_provenance.py",
         "tests/test_firmware_rollout.py",
         "tests/test_firmware_delivery.py",
+        # M6 (immutable evidence, legal hold, replay/reconciliation for DR;
+        # see CLAUDE.md's milestone list and docs/inputs.md's M5-M6 row)
+        "docs/adr/0007-m6-evidence-resilience-dr.md",
+        "docs/evidence.md",
+        "evidence/__init__.py",
+        "evidence/records.py",
+        "evidence/worm.py",
+        "evidence/capture.py",
+        "evidence/legal_hold.py",
+        "evidence/dr.py",
+        "fixtures/evidence_records.synthetic.json",
+        "tests/test_evidence_records.py",
+        "tests/test_evidence_worm.py",
+        "tests/test_evidence_capture.py",
+        "tests/test_evidence_legal_hold.py",
+        "tests/test_evidence_dr.py",
     ]
     for name in required:
         if not (ROOT / name).is_file() or not (ROOT / name).stat().st_size:
@@ -242,6 +258,23 @@ def _check_m5_firmware_policy():
         raise ValueError("Firmware route config required")
 
 
+def _check_m6_evidence_policy():
+    # evidence/ is M6's new package: immutable evidence records, a
+    # provider-neutral WORM store contract, legal hold, and
+    # replay/reconciliation for DR. Same no-network/process-import policy
+    # as every prior domain package.
+    _check_no_forbidden_imports("evidence")
+
+    fixture = json.loads((ROOT / "fixtures/evidence_records.synthetic.json").read_text())
+    if not fixture.get("records"):
+        raise ValueError("Synthetic evidence-record fixture entries required")
+    for entry in fixture["records"]:
+        if not entry.get("record_id", "").startswith("synthetic-"):
+            raise ValueError("Evidence-record fixture ids must be synthetic")
+        if not entry.get("tenant_id", "").startswith("synthetic-"):
+            raise ValueError("Evidence-record fixture tenant ids must be synthetic")
+
+
 def main():
     _check_required_artifacts()
     _check_m0_inert_plan_and_fixtures()
@@ -250,6 +283,7 @@ def main():
     _check_m3_ingestion_policy()
     _check_m4_gateway_reporting_policy()
     _check_m5_firmware_policy()
+    _check_m6_evidence_policy()
 
     suite = unittest.defaultTestLoader.discover(str(ROOT / "tests"))
     if suite.countTestCases() == 0:
