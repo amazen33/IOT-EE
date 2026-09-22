@@ -12,6 +12,8 @@ Before M5: device signing/trust and update capabilities; firmware provenance pro
 
 M6 addressed evidence scope, RPO/RTO documentation, and legal-hold enforcement as a provider-neutral contract (see docs/evidence.md and docs/adr/0007-m6-evidence-resilience-dr.md). Still open before a real deployment: WORM provider/region, and DR ownership as an organizational/process assignment.
 
-Before M7–M8: whether monetization is required; certified usage dimensions and closure rules; commercial/currency/tax requirements; selected deployment profiles; on-prem/cloud capacity/network constraints; approved IaC runner/GitOps ownership and budgets.
+M7 addressed monetization as a default-off, per-tenant-overridable runtime flag with certified (active-device-count) usage, effective-dated pricing, and immutable period closure with reversal-only correction (see docs/billing.md and docs/adr/0008-m7-monetization.md). Still open: whether monetization is commercially required for any real tenant; commercial/currency/tax requirements; a real payment provider or invoicing system.
+
+Before M8: selected deployment profiles; on-prem/cloud capacity/network constraints; approved IaC runner/GitOps ownership and budgets.
 
 Repository administration still needs a remote host, branch/review protections, CI enablement, application-stack decision, and accountable milestone approvers. Local artifacts cannot configure hosted protections without that input. Dependency/security tooling policy: a first precedent was set in M4 (docs/adr/0005-m4-gateway-reporting.md, decision 5) — a new dependency must be pure-data or otherwise zero-risk, pinned to a minimum version in requirements.txt, and added via reviewed PR; broader tooling (automated scanning, license policy, upgrade cadence) remains an open input.
