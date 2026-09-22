@@ -17,14 +17,16 @@ sys.path.insert(0, str(ROOT))
 from foundation.contracts import validate_event, validate_plan
 
 # Modules that would indicate network/process/filesystem-outside-repo I/O.
-# migration_studio must not import any of these: M1 is configuration
-# lifecycle and vault *abstraction* only, never a real backend call or a
-# legacy system connection.
-_FORBIDDEN_IMPORTS_FOR_MIGRATION_STUDIO = {
+# migration_studio and domain_core must not import any of these: both are
+# domain/configuration logic only, never a real backend call, a legacy
+# system connection, or infrastructure provisioning.
+_FORBIDDEN_IMPORTS_FOR_DOMAIN_MODULES = {
     "socket", "requests", "urllib", "urllib2", "http", "httpx", "aiohttp",
     "paramiko", "subprocess", "ftplib", "smtplib", "telnetlib", "psycopg2",
     "pymongo", "boto3", "kafka", "paho",
 }
+
+_POLICY_CHECKED_PACKAGES = ("migration_studio", "domain_core")
 
 
 def _check_required_artifacts():
@@ -46,6 +48,24 @@ def _check_required_artifacts():
         "tests/test_migration_studio_vault.py",
         "tests/test_migration_studio_sources.py",
         "tests/test_migration_studio_evidence.py",
+        # M2 (domain core: tenancy, RBAC, assets, devices, command domain;
+        # see requirements-addendum.md and docs/test-plan.md's M2 row)
+        "docs/adr/0003-m2-domain-core.md",
+        "docs/domain-core.md",
+        "domain_core/__init__.py",
+        "domain_core/tenancy.py",
+        "domain_core/units.py",
+        "domain_core/rbac.py",
+        "domain_core/assets.py",
+        "domain_core/devices.py",
+        "domain_core/commands.py",
+        "fixtures/domain_core.synthetic.json",
+        "tests/test_domain_core_tenancy.py",
+        "tests/test_domain_core_rbac.py",
+        "tests/test_domain_core_assets.py",
+        "tests/test_domain_core_devices.py",
+        "tests/test_domain_core_commands.py",
+        "tests/test_domain_core_fixture.py",
     ]
     for name in required:
         if not (ROOT / name).is_file() or not (ROOT / name).stat().st_size:
@@ -68,11 +88,11 @@ def _check_m0_inert_plan_and_fixtures():
         keys.add(key)
 
 
-def _check_m1_migration_studio_policy():
-    """Mechanically enforce M1's non-goals rather than relying on
-    convention: no network-capable imports anywhere in migration_studio,
-    and the synthetic source fixture really is synthetic."""
-    for py_file in sorted((ROOT / "migration_studio").glob("*.py")):
+def _check_no_forbidden_imports(package_name):
+    """Mechanically enforce a domain package's non-goals rather than
+    relying on convention: no network/process-capable imports anywhere in
+    it."""
+    for py_file in sorted((ROOT / package_name).glob("*.py")):
         tree = ast.parse(py_file.read_text(), filename=str(py_file))
         for node in ast.walk(tree):
             names = []
@@ -80,13 +100,16 @@ def _check_m1_migration_studio_policy():
                 names = [alias.name.split(".")[0] for alias in node.names]
             elif isinstance(node, ast.ImportFrom) and node.module:
                 names = [node.module.split(".")[0]]
-            forbidden = set(names) & _FORBIDDEN_IMPORTS_FOR_MIGRATION_STUDIO
+            forbidden = set(names) & _FORBIDDEN_IMPORTS_FOR_DOMAIN_MODULES
             if forbidden:
                 raise ValueError(
                     f"{py_file.relative_to(ROOT)} imports forbidden module(s) {sorted(forbidden)}; "
-                    "migration_studio must stay free of network/process I/O in M1"
+                    f"{package_name} must stay free of network/process I/O"
                 )
 
+
+def _check_m1_migration_studio_policy():
+    _check_no_forbidden_imports("migration_studio")
     sources = json.loads((ROOT / "fixtures/migration_sources.synthetic.json").read_text())
     if not sources:
         raise ValueError("Synthetic migration-source fixtures required")
@@ -95,10 +118,21 @@ def _check_m1_migration_studio_policy():
             raise ValueError("Migration-source fixture ids must be synthetic")
 
 
+def _check_m2_domain_core_policy():
+    _check_no_forbidden_imports("domain_core")
+    fixture = json.loads((ROOT / "fixtures/domain_core.synthetic.json").read_text())
+    if not fixture.get("tenants"):
+        raise ValueError("Synthetic domain-core tenant fixtures required")
+    for tenant in fixture["tenants"]:
+        if not tenant.get("tenant_id", "").startswith("synthetic-"):
+            raise ValueError("Domain-core fixture tenant ids must be synthetic")
+
+
 def main():
     _check_required_artifacts()
     _check_m0_inert_plan_and_fixtures()
     _check_m1_migration_studio_policy()
+    _check_m2_domain_core_policy()
 
     suite = unittest.defaultTestLoader.discover(str(ROOT / "tests"))
     if suite.countTestCases() == 0:

@@ -1,0 +1,29 @@
+{
+  "tenants": [
+    {"tenant_id": "synthetic-tenant-standard", "name": "Synthetic Standard Co", "tier": "standard", "provisioned_device_count": 12},
+    {"tenant_id": "synthetic-tenant-enterprise", "name": "Synthetic Enterprise Co", "tier": "enterprise", "provisioned_device_count": 5000}
+  ],
+  "regions": [
+    {"region_id": "synthetic-region-north", "tenant_id": "synthetic-tenant-standard", "name": "North"}
+  ],
+  "sites": [
+    {"site_id": "synthetic-site-depot1", "tenant_id": "synthetic-tenant-standard", "region_id": "synthetic-region-north", "name": "Depot 1"}
+  ],
+  "tanks": [
+    {
+      "tank_id": "synthetic-tank-001",
+      "tenant_id": "synthetic-tenant-standard",
+      "site_id": "synthetic-site-depot1",
+      "material": "steel",
+      "communication_type": "cellular"
+    }
+  ],
+  "roles": [
+    {
+      "role_id": "synthetic-role-operator",
+      "tenant_id": "synthetic-tenant-standard",
+      "name": "Field Operator",
+      "permissions": ["device.view", "device.command.dispatch"]
+    }
+  ]
+}
