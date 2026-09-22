@@ -1,0 +1,14 @@
+[
+  {
+    "route_id": "firmware-artifact-download",
+    "uri": "/api/tenant/{tenant_id}/firmware/{device_id}/artifact",
+    "methods": ["GET"],
+    "upstream_service": "firmware-distribution-service",
+    "protocol": "http",
+    "plugins": {
+      "rate-limit": {"requests_per_minute": 30},
+      "auth": {"required_permission": "device.command.dispatch.firmware"}
+    },
+    "implemented": false
+  }
+]
