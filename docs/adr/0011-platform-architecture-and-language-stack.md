@@ -18,6 +18,15 @@ branches are reconciled, renumbering this file (and updating its
 in-repo references) is a small follow-up, not a rewrite -- flagged again
 under "Missing inputs," below.
 
+Follow-up: `docs/adr/README.md` now establishes a repo-wide ADR-
+numbering convention (numbers assigned at merge time, not at branch
+creation) to prevent this exact collision going forward. That
+convention supersedes the ad hoc renumbering done here -- no further
+renumber of this document (0011) is needed once the convention is in
+place, but ADR 0010 (still on the unmerged
+`feature/worm-s3-adapter-graduation` branch) should renumber to the
+next free slot at its own merge time, per that convention.
+
 ## Context
 
 This repository (IOT-EE) modernizes a legacy enterprise, multi-tenant
@@ -30,6 +39,27 @@ definitions. That brief was originally language-agnostic; a follow-up
 clarification from the repository owner fixed the actual language
 mandate: **Java 17 + Spring Boot/Spring Cloud is the platform**, not
 Python.
+
+This ADR is not a departure from ADR 0001 -- it is the fulfillment of a
+decision ADR 0001 deliberately left open. ADR 0001 states: "M0
+implementation choice: standard-library Python validates a narrow
+synthetic event contract and inert deployment plan. This is test
+scaffolding, not an ingestion service, production security boundary,
+schema registry, or application-stack decision. Choose runtime, storage
+topology, versions, and identity/vault providers after missing inputs
+are resolved." Python was always the scaffolding, not the platform.
+This ADR makes the platform-language decision ADR 0001 deferred.
+
+Design principles carried forward from the founding brief and made
+explicit here: domain-driven bounded contexts (Decision 1's service
+list), event-driven integration (Kafka as the event backbone, Decision
+3), pay-as-you-go metering (Decision 6), and **features-based design**:
+capabilities are packaged as independently enable/disable-able feature
+modules. The core telemetry/alarm/command path is unaffected by
+optional features (monetization, firmware rollout, RAG) being off.
+Feature boundaries are enforced mechanically, not just by convention --
+mirroring M7's own billing-isolation gate, generalized as an explicit
+design principle rather than a one-off rule for one feature.
 
 This matters because M0-M8 of this repository were already built in
 Python, before that clarification. Per the repository owner's explicit
@@ -79,10 +109,13 @@ exactly where they add value and nowhere else.
 
 ### 2. ThingsBoard CE: a compatibility component, extended in Java, never forked, upgraded with minimal friction
 
-TB CE is not the platform's source of truth. It is a bounded,
-replaceable compatibility layer providing device connectivity (MQTT/
-HTTP/CoAP transports), a rule engine, and dashboard primitives the
-legacy system already depends on.
+TB CE is not the platform's source of truth. It is an upgradeable
+compatibility core providing device connectivity (MQTT/HTTP/CoAP
+transports), a rule engine, and dashboard primitives the legacy system
+already depends on. "Upgradeable" is the operative word, not
+"replaceable": the product is extended TB CE plus this platform's own
+Java services, and TB CE is adopted at new versions with minimal
+friction (Decision 8), not swapped out for a different platform.
 
 Extension model: custom rule nodes (`TbNode`/`@RuleNode`) and custom
 integrations (`AbstractIntegration`, over gRPC) run *inside* TB CE's
@@ -265,12 +298,15 @@ friction, and that requirement is now binding, not aspirational:
   thingsboard:
     version: "<pinned TB CE version>"
     customizationManifest: tb-extensions/manifest.yaml   # the declarative rule-node/integration/config set this ADR requires
+  runtime:
+    provider: k8s                                     # k8s | k3s | eks | aks | gke
   messaging:
     provider: kafka                                   # kafka (+ mirrormaker for multi-cluster)
+    cdc: debezium                                      # debezium | mirrormaker | <other modern CDC tool>
   mqtt:
     provider: mosquitto                                # mosquitto | hivemq | emq
   gateway:
-    provider: apisix
+    provider: apisix                                   # apisix | nginx
   mesh:
     provider: istio
   storage:
@@ -282,16 +318,22 @@ friction, and that requirement is now binding, not aspirational:
   deploy:
     provisioning: [ansible, terraform]                 # terraform | opentofu, interchangeably
     packaging: helm
+    helm:
+      enabled: true                                    # allow helm charts to be enabled/disabled per environment
     delivery: argocd
   payments:
     provider: <configured-provider-or-none>            # monetization stays optional per Decision 6
   ```
 
-  The exact schema, its validation tooling, and where `tb-
-  extensions/manifest.yaml` physically lives are open design work for
-  M9, not settled here -- this ADR fixes the *principle* (tool identity
-  is config, never code) and a representative shape, not the final
-  contract.
+  This now names the specific swap paths the repository owner
+  called out as required (APISIX <-> NGINX, k8s <-> k3s, Helm charts
+  enabled/disabled per environment) in addition to the tools named in
+  Decision 3, so the "tool swap is a config change" claim actually
+  covers what was asked for. The exact schema, its validation tooling,
+  and where `tb-extensions/manifest.yaml` physically lives are still
+  open design work for M9, not settled here -- this ADR fixes the
+  *principle* (tool identity is config, never code) and a
+  representative shape, not the final contract.
 
 ### 9. Status of M0-M8 Python work
 
@@ -359,7 +401,7 @@ their own content indefinitely.
 | M5 Firmware | `firmware.signing/provenance/rollout/delivery` | **Port directly** as `services/firmware`: same signing/provenance/staged-rollout/rollback contract shape; the WebSocket-progress-only rule (Decision 4) is unchanged and now Java-native (Spring WebSocket). |
 | M6 Evidence/WORM/DR + graduation | `evidence.records/worm/capture/legal_hold/dr`, `adapters.worm_s3` | **Port directly** as `services/evidence`: a `WormStore` interface with a real S3/MinIO Object Lock implementation (AWS SDK v2 or MinIO's Java SDK), redaction/content-hash checks enforced at construction, RBAC-gated legal hold. The Python adapter's isolation/lazy-dependency discipline becomes a build-tool concern (a separate Gradle/Maven module with its own optional dependency) rather than a runtime lazy import. |
 | M7 Monetization | `billing.flags/metering/pricing/closure/service` | **Port directly** as `services/monetization` (Decision 6): default-off single-gate flag resolution, certified usage-count metering consuming finalized Kafka events, effective-dated price plans, immutable reversal-only period closure. M7's billing-isolation gate becomes an ArchUnit rule: no other service module may depend on `services/monetization`'s internals, only its published event contract. |
-| M8 Deployment Studio | `deployment_studio.profiles/approval/audit/plan/iac/runner/gitops` | **Port directly** as `services/deployment-studio`: immutable versioned profile registry extended with the Topology dimension (Decision 7), RBAC-gated plan lifecycle and audit, IaC-document validation now against real Ansible/Terraform-or-OpenTofu/Helm/ArgoCD manifests, GitOps reconciliation against a real cluster -- the natural next real-backend graduation, directly continuing this repo's own ADR 0010 precedent (a real, read-only GitOps backend was the item ADR 0010 explicitly deferred). |
+| M8 Deployment Studio | `deployment_studio.profiles/approval/audit/plan/iac/runner/gitops` | **Port directly** as `services/deployment-studio`: immutable versioned profile registry extended with the Topology dimension (Decision 7), RBAC-gated plan lifecycle and audit, IaC-document validation now against real Ansible/Terraform-or-OpenTofu/Helm/ArgoCD manifests, GitOps reconciliation against a real cluster -- the natural next real-backend graduation, directly continuing the read-only real-backend precedent ADR 0010 established (WORM store now; GitOps read as the analogous next graduation). |
 | Post-M8 graduation | `adapters.worm_s3` | **Direct precedent**, not a milestone to re-map: establishes the adapter-isolation pattern (Decision 3/Risk 1) and the specific Object Lock approach `services/evidence`'s Java adapter should follow. |
 
 ## Repo structure proposal
