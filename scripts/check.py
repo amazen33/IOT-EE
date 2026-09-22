@@ -66,6 +66,24 @@ def _check_required_artifacts():
         "tests/test_domain_core_devices.py",
         "tests/test_domain_core_commands.py",
         "tests/test_domain_core_fixture.py",
+        # M3 (ingestion: MQTT topics, transactional outbox, Kafka relay +
+        # idempotent consumer, device delivery/offline queue, TB
+        # shadow-parity comparison framework; see requirements-addendum.md
+        # and docs/test-plan.md's M3 row)
+        "docs/adr/0004-m3-ingestion-outbox-delivery.md",
+        "docs/ingestion.md",
+        "ingestion/__init__.py",
+        "ingestion/topics.py",
+        "ingestion/outbox.py",
+        "ingestion/kafka.py",
+        "domain_core/delivery.py",
+        "migration_studio/shadow_parity.py",
+        "fixtures/shadow_parity.synthetic.json",
+        "tests/test_ingestion_topics.py",
+        "tests/test_ingestion_outbox.py",
+        "tests/test_ingestion_kafka.py",
+        "tests/test_domain_core_delivery.py",
+        "tests/test_migration_studio_shadow_parity.py",
     ]
     for name in required:
         if not (ROOT / name).is_file() or not (ROOT / name).stat().st_size:
@@ -128,11 +146,32 @@ def _check_m2_domain_core_policy():
             raise ValueError("Domain-core fixture tenant ids must be synthetic")
 
 
+def _check_m3_ingestion_policy():
+    # ingestion/ is the M3 telemetry-ingestion package: MQTT topic
+    # convention, transactional outbox, and the Kafka relay/consumer
+    # abstractions (ingestion/kafka.py is this package's own
+    # provider-neutral module name -- it must not, and does not, actually
+    # import a real "kafka" or "paho" client library). Same static
+    # no-network/process-import policy as migration_studio and
+    # domain_core, via the shared helper.
+    _check_no_forbidden_imports("ingestion")
+
+    fixture = json.loads((ROOT / "fixtures/shadow_parity.synthetic.json").read_text())
+    if not fixture.get("pairs"):
+        raise ValueError("Synthetic shadow-parity fixture pairs required")
+    for pair in fixture["pairs"]:
+        for side in ("canonical", "shadow"):
+            entry = pair.get(side)
+            if entry is not None and not entry.get("event_id", "").startswith("synthetic-"):
+                raise ValueError("Shadow-parity fixture event ids must be synthetic")
+
+
 def main():
     _check_required_artifacts()
     _check_m0_inert_plan_and_fixtures()
     _check_m1_migration_studio_policy()
     _check_m2_domain_core_policy()
+    _check_m3_ingestion_policy()
 
     suite = unittest.defaultTestLoader.discover(str(ROOT / "tests"))
     if suite.countTestCases() == 0:

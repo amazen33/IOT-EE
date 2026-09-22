@@ -50,4 +50,12 @@ required review checks before collaborative delivery.
   command domain (authorization, TTL, idempotent dispatch). No real
   PostgreSQL schema, MQTT transport, or device delivery yet — see
   [`docs/domain-core.md`](docs/domain-core.md).
-- M3 onward: not started.
+- **M3 — ingestion foundation done, real backends blocked**: MQTT topic
+  convention, a transactional outbox (raw_telemetry + outbox_event),
+  a Kafka relay with at-least-once-tolerant idempotent consumption,
+  bounded per-device offline command queueing with reconnect
+  replay-prevention, and a ThingsBoard shadow-parity comparison
+  framework exercised against synthetic data only. No real MQTT broker,
+  PostgreSQL, Kafka cluster, or ThingsBoard connection exists yet — see
+  [`docs/ingestion.md`](docs/ingestion.md).
+- M4 onward: not started.
