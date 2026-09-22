@@ -58,4 +58,12 @@ required review checks before collaborative delivery.
   framework exercised against synthetic data only. No real MQTT broker,
   PostgreSQL, Kafka cluster, or ThingsBoard connection exists yet — see
   [`docs/ingestion.md`](docs/ingestion.md).
-- M4 onward: not started.
+- **M4 — reporting read-model + gateway auth/route contract done, SSR/WS/real-gateway blocked**:
+  a CQRS read-model projecting M3's telemetry into a per-tenant tank
+  summary (latest/min/max level, consumption rate), tenant-local display
+  formatting (UTC storage/computation unchanged), a permission-gated
+  report publication record, and a provider-neutral gateway auth contract
+  plus an APISIX-shaped route/policy contract. No real APISIX, identity
+  provider, SSR renderer, or WebSocket server exists yet — see
+  [`docs/gateway.md`](docs/gateway.md) and [`docs/reporting.md`](docs/reporting.md).
+- M5 onward: not started.

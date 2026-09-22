@@ -1,0 +1,69 @@
+{
+  "readings": [
+    {
+      "event_id": "synthetic-event-501",
+      "tenant_id": "synthetic-tenant-a",
+      "device_id": "synthetic-device-001",
+      "occurred_at": "2026-01-01T00:00:00Z",
+      "payload": {"level_percent": 60.0, "temperature_c": 20.0, "battery_percent": 90}
+    },
+    {
+      "event_id": "synthetic-event-502",
+      "tenant_id": "synthetic-tenant-a",
+      "device_id": "synthetic-device-001",
+      "occurred_at": "2026-01-01T01:00:00Z",
+      "payload": {"level_percent": 55.0, "temperature_c": 20.5, "battery_percent": 89}
+    },
+    {
+      "event_id": "synthetic-event-503",
+      "tenant_id": "synthetic-tenant-a",
+      "device_id": "synthetic-device-001",
+      "occurred_at": "2026-01-01T03:00:00Z",
+      "payload": {"level_percent": 45.0, "temperature_c": 19.0, "battery_percent": 87}
+    },
+    {
+      "event_id": "synthetic-event-504",
+      "tenant_id": "synthetic-tenant-b",
+      "device_id": "synthetic-device-002",
+      "occurred_at": "2026-01-01T00:00:00Z",
+      "payload": {"level_percent": 80.0, "temperature_c": 18.0, "battery_percent": 95}
+    },
+    {
+      "event_id": "synthetic-event-505",
+      "tenant_id": "synthetic-tenant-b",
+      "device_id": "synthetic-device-002",
+      "occurred_at": "2026-01-01T00:30:00Z",
+      "payload": {"level_percent": 82.0, "temperature_c": 18.2, "battery_percent": 95}
+    },
+    {
+      "event_id": "synthetic-event-502",
+      "tenant_id": "synthetic-tenant-a",
+      "device_id": "synthetic-device-001",
+      "occurred_at": "2026-01-01T01:00:00Z",
+      "payload": {"level_percent": 55.0, "temperature_c": 20.5, "battery_percent": 89},
+      "note": "duplicate of synthetic-event-502, replayed to test projector idempotency"
+    }
+  ],
+  "expected": {
+    "synthetic-tenant-a:synthetic-device-001": {
+      "sample_count": 3,
+      "latest_level_percent": 45.0,
+      "min_level_percent": 45.0,
+      "max_level_percent": 60.0,
+      "latest_temperature_c": 19.0,
+      "latest_battery_percent": 87.0,
+      "last_reading_at": "2026-01-01T03:00:00Z",
+      "consumption_rate_percent_per_hour": -5.0
+    },
+    "synthetic-tenant-b:synthetic-device-002": {
+      "sample_count": 2,
+      "latest_level_percent": 82.0,
+      "min_level_percent": 80.0,
+      "max_level_percent": 82.0,
+      "latest_temperature_c": 18.2,
+      "latest_battery_percent": 95.0,
+      "last_reading_at": "2026-01-01T00:30:00Z",
+      "consumption_rate_percent_per_hour": 4.0
+    }
+  }
+}

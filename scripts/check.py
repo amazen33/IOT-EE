@@ -84,6 +84,25 @@ def _check_required_artifacts():
         "tests/test_ingestion_kafka.py",
         "tests/test_domain_core_delivery.py",
         "tests/test_migration_studio_shadow_parity.py",
+        # M4 (gateway auth/route contract + reporting read-models; see
+        # requirements-addendum.md and docs/test-plan.md's M4 row)
+        "docs/adr/0005-m4-gateway-reporting.md",
+        "docs/gateway.md",
+        "docs/reporting.md",
+        "gateway/__init__.py",
+        "gateway/auth.py",
+        "gateway/routes.py",
+        "reporting/__init__.py",
+        "reporting/telemetry_summary.py",
+        "reporting/timezone.py",
+        "reporting/publication.py",
+        "deployment/m4-gateway-routes.json",
+        "fixtures/reporting_telemetry.synthetic.json",
+        "tests/test_gateway_auth.py",
+        "tests/test_gateway_routes.py",
+        "tests/test_reporting_telemetry_summary.py",
+        "tests/test_reporting_timezone.py",
+        "tests/test_reporting_publication.py",
     ]
     for name in required:
         if not (ROOT / name).is_file() or not (ROOT / name).stat().st_size:
@@ -166,12 +185,36 @@ def _check_m3_ingestion_policy():
                 raise ValueError("Shadow-parity fixture event ids must be synthetic")
 
 
+def _check_m4_gateway_reporting_policy():
+    # gateway/ and reporting/ are M4's new packages: an auth/route
+    # contract and a CQRS read-model over M3's telemetry. Same
+    # no-network/process-import policy as every prior domain package.
+    _check_no_forbidden_imports("gateway")
+    _check_no_forbidden_imports("reporting")
+
+    routes = json.loads((ROOT / "deployment/m4-gateway-routes.json").read_text())
+    if not routes:
+        raise ValueError("Gateway route config required")
+    for route in routes:
+        if not route.get("route_id"):
+            raise ValueError("Gateway route entries require a route_id")
+
+    fixture = json.loads((ROOT / "fixtures/reporting_telemetry.synthetic.json").read_text())
+    if not fixture.get("readings"):
+        raise ValueError("Synthetic reporting-telemetry fixture readings required")
+    for reading in fixture["readings"]:
+        for field_name in ("event_id", "tenant_id", "device_id"):
+            if not reading.get(field_name, "").startswith("synthetic-"):
+                raise ValueError("Reporting-telemetry fixture ids must be synthetic")
+
+
 def main():
     _check_required_artifacts()
     _check_m0_inert_plan_and_fixtures()
     _check_m1_migration_studio_policy()
     _check_m2_domain_core_policy()
     _check_m3_ingestion_policy()
+    _check_m4_gateway_reporting_policy()
 
     suite = unittest.defaultTestLoader.discover(str(ROOT / "tests"))
     if suite.countTestCases() == 0:

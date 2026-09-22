@@ -1,0 +1,49 @@
+[
+  {
+    "route_id": "reports-tank-summary-view",
+    "uri": "/api/tenant/{tenant_id}/reports/tank-summary",
+    "methods": ["GET"],
+    "upstream_service": "reporting-service",
+    "protocol": "http",
+    "plugins": {
+      "rate-limit": {"requests_per_minute": 60},
+      "auth": {"required_permission": "reports.view"}
+    },
+    "implemented": true
+  },
+  {
+    "route_id": "reports-tank-summary-publish",
+    "uri": "/api/tenant/{tenant_id}/reports/tank-summary/publish",
+    "methods": ["POST"],
+    "upstream_service": "reporting-service",
+    "protocol": "http",
+    "plugins": {
+      "rate-limit": {"requests_per_minute": 10},
+      "auth": {"required_permission": "reports.publish"}
+    },
+    "implemented": true
+  },
+  {
+    "route_id": "ssr-tenant-dashboard",
+    "uri": "/tenant/{tenant_id}/dashboard",
+    "methods": ["GET"],
+    "upstream_service": "ssr-frontend",
+    "protocol": "http",
+    "plugins": {
+      "rate-limit": {"requests_per_minute": 120},
+      "auth": {"required_permission": "reports.view"}
+    },
+    "implemented": false
+  },
+  {
+    "route_id": "ws-tenant-telemetry-subscription",
+    "uri": "/ws/tenant/{tenant_id}/telemetry",
+    "methods": ["GET"],
+    "upstream_service": "telemetry-ws-service",
+    "protocol": "websocket",
+    "plugins": {
+      "auth": {"required_permission": "device.view"}
+    },
+    "implemented": false
+  }
+]
