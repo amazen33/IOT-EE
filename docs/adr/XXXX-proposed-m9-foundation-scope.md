@@ -1,9 +1,12 @@
 # ADR XXXX (proposed) -- M9: foundation scope -- TB CE investigation (Track A) and Java bootstrap (Track B)
 
-Status: proposed / draft. Filed under `docs/adr/README.md`'s numbering
-convention (a real number is assigned at merge, not now); this file's
-final path is `docs/adr/<NNNN>-m9-foundation-scope.md`. No code -- Java
-or Python -- is written against this ADR until it is agreed, per the
+Status: proposed / draft, all four open implementation choices
+(Decisions 3, 4, 6, 7) confirmed by the repository owner. Filed under
+`docs/adr/README.md`'s numbering convention (a real number is assigned
+at merge, not now); this file's final path is
+`docs/adr/<NNNN>-m9-foundation-scope.md`. No code -- Java or Python --
+is written against this ADR until the branch-base note below is also
+resolved (rebase onto real `main`, confirmed and pushed), per the
 repository owner's standing instruction and ADR 0011's own gate.
 
 ## Context
@@ -31,9 +34,10 @@ business logic:
   ArchUnit base rule set -- one rule per boundary, mirroring
   `scripts/check.py`'s discipline -- with a negative test per rule that
   plants a violation and asserts the build fails, the same discipline
-  as `tests/test_check_script_gates.py`. Build one trivial
-  "walking-skeleton" service that uses `common/` and passes the
-  ArchUnit gates.
+  as `tests/test_check_script_gates.py`. `services/identity`'s own
+  first commit is that walking-skeleton slice, using `common/` and
+  passing the ArchUnit gates (Decision 6) -- not a separate throwaway
+  module.
 
 Explicitly **not** M9 (repository owner's own list, restated in
 Non-goals below): any `TbNode`/`AbstractIntegration` implementation, any
@@ -42,12 +46,33 @@ Migration Studio or Deployment Studio code. Those are M10+.
 
 Four concrete implementation choices Track B depends on were left open
 by both ADR 0011 and the repository owner's scoping message; this ADR
-proposes an answer for each rather than leaving `common/` design
-underspecified, and asks for confirmation via this turn's scoping
-questions (see the end of this message) before any code is written:
-build tool (Maven vs. Gradle), the event/command envelope's schema
-format, the walking-skeleton service's name/placement, and whether the
-`spec/` relocation happens in M9 or is deferred.
+proposed an answer for each, and **all four are now confirmed** by the
+repository owner: build tool (Maven), the event/command envelope's
+schema format (Protobuf), the walking-skeleton slice's placement
+(`services/identity`'s own first commit, not a separate module), and
+the `spec/` relocation (happens in M9, sequenced after the WORM-adapter
+PR merges and before Track B begins). See Decisions 3, 4, 6, and 7. No
+code is written against any of them until the branch-base note below
+is also resolved.
+
+## Branch base note
+
+This ADR's own branch, `docs/m9-foundation-scope-adr`, is currently
+built on `d8dee00` -- the local tip of `docs/platform-architecture-adr`
+(ADR 0011) -- **not** on the real merged tip of `main`, `f97919f` (PR
+#9). This session's shell cannot independently verify `main`'s true
+state (`git fetch`/`git pull` from here is blocked by a proxy 403), so
+this gap can only be closed from the repository owner's own terminal,
+where GitHub access already works.
+
+**Required before any Track A/B work begins:** rebase
+`docs/m9-foundation-scope-adr` onto real `main` (which should already
+contain `f97919f`, and may by then also contain the merged WORM-adapter
+PR, ADR 0010 -- see Decision 7's sequencing), confirm the rebase is
+clean, and push the rebased branch. Track A and Track B code/documents
+are **not** started until that rebase is confirmed and the branch is
+pushed -- this is now a hard gate on top of this ADR's own agreement,
+not a formality.
 
 ## Decisions
 
@@ -78,33 +103,44 @@ here because Track A is the first time this repository captures
 anything from a *real* external system rather than authoring synthetic
 data from scratch.
 
-### 3. Build tool: Maven (proposed -- see scoping question 1)
+### 3. Build tool: Maven (confirmed)
 
-ADR 0011's skeleton names "Maven/Gradle parent" without choosing. This
-ADR proposes **Maven**, for one reason specific to M9's own goal: a
+ADR 0011's skeleton names "Maven/Gradle parent" without choosing;
+**Maven is confirmed** for the reason given when this was proposed: a
 declarative, XML-based multi-module POM is more directly analogous to
 `scripts/check.py`'s own style (explicit, verbose, easy to diff in
 review) than Gradle's programmable build scripts, which matters most
 right when the whole point of Track B is to prove a *mechanically
-verifiable* build discipline exists. Gradle (Kotlin DSL) is a
-reasonable alternative if the repository owner has a standing
-preference; this is exactly the kind of small, foundational,
-hard-to-reverse-cheaply choice this ADR surfaces as a scoping question
-rather than deciding unilaterally.
+verifiable* build discipline exists.
 
-### 4. Event/command envelope schema format: JSON Schema (proposed -- see scoping question 2)
+### 4. Event/command envelope schema format: Protobuf (confirmed, platform-wide, no future Avro)
 
-`common/`'s event/command envelope needs a concrete schema technology,
-not just "versioned, additive" as a principle. This ADR proposes **JSON
-Schema** for M9, deferring an Avro/Protobuf-plus-schema-registry
-decision to whichever milestone first needs real Kafka producer/
-consumer code (M10's `services/ingestion` bridge, per ADR 0011's
-mapping table) -- JSON Schema is human-readable, needs no registry
-infrastructure, and is what this repository's own `cfg.yaml` validation
-already uses (ADR 0011 Decision 8), keeping M9's foundation internally
-consistent. This is explicitly a placeholder-for-now decision: M9's
-walking-skeleton service does not touch Kafka at all, so nothing here
-is locked in for the ingestion bridge's eventual real choice.
+The repository owner rejected deferring this and settled the format,
+not just the direction: `common/`'s event/command envelope is
+**Protobuf, and only Protobuf, platform-wide.** Rationale, as stated by
+the repository owner: ADR 0011 already mandates gRPC for inter-service
+transport, and gRPC is Protobuf-native. Choosing Avro for Kafka instead
+would mean maintaining two schema definitions per event (`.avsc` for
+Kafka, `.proto` for gRPC), two schema registries, and two drift
+surfaces -- directly working against ADR 0011's own constitutional rule
+that event contracts are versioned, additive, and compatibility-tested.
+Protobuf-only gives one source of truth serving both transports.
+
+**Envelope shape.** CloudEvents v1.0 semantics, Protobuf binding.
+Top-level fields: `id` (server-issued correlation ID -- see Decision
+5), `source`, `type`, `specversion`, `time`, plus `causation_id` and
+`tenant_id` as top-level extension fields. `data` is a typed Protobuf
+message specific to each event type, versioned independently of the
+envelope itself. The APISIX edge's JSON binding uses the same logical
+envelope -- identical semantics, serialized as JSON rather than binary
+Protobuf at that one boundary.
+
+**Avro is not the platform envelope format**, and is not deferred as a
+future option for the platform envelope. If a future Python consumer
+(e.g. the RAG service) genuinely needs Avro for its own internal
+storage, that is a decision scoped to that service alone, made behind
+its own port/adapter boundary -- never a platform-wide envelope
+decision. There is no open "Avro for later" question; this is settled.
 
 ### 5. Correlation-ID standard: a platform-level `X-Correlation-Id` header/field, distinct from distributed-tracing context
 
@@ -123,32 +159,71 @@ idempotency identifier (a constitutional requirement, ADR 0011 Decision
 interoperates with TB CE's own request/event lifecycle is Track A's
 job (Risk 2 below), not decided here.
 
-### 6. Walking-skeleton service: `services/walking-skeleton` (proposed -- see scoping question 3), not a real bounded-context stub
+### 6. `services/identity`'s first commit IS the walking skeleton (confirmed; no separate stub module)
 
-Track B's "one trivial service" is a genuinely empty Spring Boot
-application (a health endpoint, nothing else) whose only purpose is
-proving the multi-module build, `common/` dependency wiring, ArchUnit
-gate, and container image all work end-to-end. This ADR proposes
-placing it at a dedicated, obviously-non-functional path,
-`services/walking-skeleton/`, rather than `services/identity/` (a name
-from ADR 0011's real skeleton) -- using a real bounded context's name
-for an empty shell risks a future reader mistaking "the skeleton
-compiles" for "identity is built," and the M9 gate (Acceptance
-criteria, below) should retire this path once a real first service
-exists, rather than accumulate stub logic inside a name that's supposed
-to mean something.
+The repository owner rejected a dedicated throwaway module on principle:
+a walking skeleton is a technique (the thinnest possible slice of the
+*real* system, proven end-to-end), not a bounded context, so it has no
+business under `services/*` as its own placeholder name -- and a
+separate probe module contradicts the technique itself, becoming dead
+code the moment a real service exists. Confirmed instead:
+`services/identity`'s first commit *is* the walking-skeleton slice --
+a minimal Spring Boot main class, one `Tenant` object, one endpoint that
+consults `common/`'s RBAC primitive, one ArchUnit rule, and one negative
+ArchUnit test that plants a violation and asserts the build fails
+(mirroring `tests/test_check_script_gates.py`'s discipline). Documented
+explicitly, here and in `services/identity`'s own README once it
+exists: **the first commit is the walking skeleton; subsequent commits
+add real tenancy/RBAC/ABAC.** Explicitly out of scope for this first
+slice: full RBAC/ABAC, SSO/JWT, persistence, and the full M2 permission
+catalog -- those are `services/identity`'s own subsequent commits, not
+M9's.
 
-### 7. Repo topology: bootstrap alongside the existing Python tree; do not relocate `spec/` in M9 (proposed -- see scoping question 4)
+### 7. Repo topology: relocate `spec/` now, as its own commit, sequenced strictly after the WORM-adapter PR merges and strictly before Track B begins (confirmed)
 
-ADR 0011 recommended the polyglot-monorepo `spec/` relocation but
-flagged it as blocked on org constraints not yet confirmed (Missing
-Inputs). Absent that confirmation, this ADR proposes M9 adds the new
-Java-related top-level directories (`common/`, `services/`,
-`tb-extensions/`, `deploy/`, `cfg/`) alongside the existing Python tree
-*without moving it* -- non-destructive, and reversible without a
-history-rewriting relocation if the repo-topology question resolves
-differently later. `scripts/check.py` and the existing Python tree are
-untouched either way.
+The repository owner confirmed the `spec/` relocation happens in M9,
+not later -- but with a specific ordering that is now load-bearing for
+the rest of this ADR:
+
+1. **The `feature/worm-s3-adapter-graduation` PR (ADR 0010) merges to
+   `main` first.** Not optional, not reorderable: that branch adds a
+   root-level `adapters/` package (`adapters/worm_s3`); ADR 0011's Java
+   skeleton also wants a root-level `adapters/` (`adapters/{mqtt,apisix,
+   storage}/`). Relocating `spec/` *before* the WORM PR merges would
+   still leave a real name collision the moment that PR lands afterward;
+   relocating *after* Track B has already started compounds the
+   collision with every subsequent Java commit. The WORM PR's own
+   review (already in progress, independent of this ADR) is the actual
+   blocking gate here, not anything M9 controls.
+2. **The `spec/` relocation happens next, as its own atomic,
+   independently reviewable commit** -- not bundled with Track A or
+   Track B. Scope of the move: every Python package, `scripts/`,
+   `tests/`, `fixtures/`, `deployment/`, and `requirements*.txt` (which
+   by then includes `requirements-adapters-s3.txt`) move under `spec/`
+   via `git mv` (history-preserving). `docs/`, `CLAUDE.md`, `README.md`,
+   and `.github/workflows/` stay at the repository root -- they are
+   shared between the Python spec and the Java platform, not
+   Python-specific. `scripts/check.py`'s `ROOT = Path(__file__).resolve
+   ().parents[1]` is relative to the script's own location and
+   self-corrects once the file lives at `spec/scripts/check.py`; only
+   the two or three required-artifact entries in it that point at
+   `docs/...` need a `ROOT.parent / "docs/..."`-style adjustment (since
+   `docs/` no longer lives under the new `ROOT`). CI is updated to
+   invoke `python spec/scripts/check.py`. A new `spec/README.md` states
+   plainly that this tree is the reference implementation, not the
+   platform (continuing ADR 0011 Decision 9's framing). Verification
+   before this commit is considered done: `python spec/scripts/check.py`
+   still reports 407/407 (or whatever count the WORM merge brings it
+   to); `git log --follow` traces each moved file's history across the
+   move; `git status` shows renames, not delete-plus-add pairs.
+3. **Track B begins only after step 2 completes** -- this is what makes
+   Track B's own root-level `adapters/` (a real ADR 0011 skeleton
+   directory) safe to create: the name is free because the Python one
+   has already moved to `spec/adapters/`.
+
+Track A has no such dependency (it produces a document, touching no
+code paths) and may proceed in parallel with, or ahead of, all three
+steps above.
 
 ### 8. Java-only; Python is untouched in M9
 
@@ -167,12 +242,15 @@ established.
 - **Harder / new work**: four concrete technical choices (build tool,
   envelope schema, skeleton-service naming, repo topology) needed
   answers this ADR could not source from ADR 0011 or the repository
-  owner's scoping message alone -- proposed here, pending confirmation.
-- **To revisit**: the event-envelope format once real Kafka producer/
-  consumer code exists (Decision 4); whether `services/walking-
-  skeleton` should be deleted or converted once a first real service
-  lands (Decision 6); the `spec/` relocation once repo-topology org
-  constraints are confirmed (Decision 7).
+  owner's scoping message alone -- all four are now confirmed (Decisions
+  3, 4, 6, 7).
+- **To revisit**: if a future Python consumer (e.g. RAG) needs Avro for
+  its own internal storage, that is scoped to that service behind its
+  own port -- never reopens the platform-wide Protobuf decision
+  (Decision 4). Nothing about `services/identity`'s walking-skeleton
+  slice needs revisiting or deleting once a first real feature lands --
+  by design it *is* the first real service, just its thinnest possible
+  commit (Decision 6).
 
 ## Risks
 
@@ -184,32 +262,45 @@ established.
    given hook, `common/`'s correlation-ID primitive may need a second,
    TB-CE-specific carrier mechanism in M10 -- flagged now so it isn't a
    surprise later.
-2. **One ArchUnit rule set tested against exactly one trivial service
-   may not exercise real boundary violations.** A rule that "passes"
-   only because nothing in the walking-skeleton service could violate
-   it yet is a false confidence signal. Mitigated by Track B's own
+2. **One ArchUnit rule set tested against exactly one thin slice
+   (`services/identity`'s walking-skeleton commit) may not exercise
+   real boundary violations.** A rule that "passes" only because
+   nothing in that first commit could violate it yet is a false
+   confidence signal. Mitigated by Track B's own
    negative-test requirement (plant a violation, assert the build
    fails) -- but this only proves the *rule* works, not that the
    *boundary* will hold once real services with real temptations to
    cross it exist.
-3. **Maven vs. Gradle is a costly-to-reverse choice once M10+ services
-   accumulate.** This ADR proposes Maven (Decision 3) but flags it as a
-   scoping question specifically because getting this wrong is expensive
-   to undo later, unlike most of M9's other choices.
+3. **Maven vs. Gradle was a costly-to-reverse choice once M10+ services
+   accumulate.** Maven is now confirmed (Decision 3), which closes this
+   risk rather than merely flagging it -- noted here because it was the
+   one Decision 3-7 choice this ADR called out as expensive to undo,
+   and is now locked in before any module exists to make reversal even
+   more expensive.
 4. **A "proposed" ADR number risks drifting from `docs/adr/README.md`'s
    own convention if this branch and another draft both merge out of
    order.** Mitigated by following that convention here: this file's
    name carries no number yet, and gets one only at merge.
+5. **This branch is not currently based on the real, merged `main`.**
+   See the branch-base note below -- this is a blocking risk, not a
+   cosmetic one: code written against a stale base would need to be
+   rebased anyway, and the `spec/`-relocation sequencing in Decision 7
+   depends on knowing the true state of `main` (specifically, whether
+   the WORM-adapter PR has actually merged there yet).
 
 ## Missing inputs
 
-- Confirmation of the four proposed decisions (3, 4, 6, 7) -- this
-  turn's scoping questions ask for exactly these.
+- Confirmation that `docs/m9-foundation-scope-adr` has been rebased
+  onto the real merged `main` and pushed (see Branch base note above)
+  -- blocking for Track A/B, independent of this ADR's own agreement.
 - The actual TB CE version to pin (Track A's own first task, not
   something this ADR can supply).
 - Whether the repository owner wants `docs/tb-ce-inventory.md` (Track
   A's output) reviewed and merged as its own PR before or alongside
   Track B's code, given they are otherwise independent.
+- Confirmation that the `feature/worm-s3-adapter-graduation` PR (ADR
+  0010) has merged to `main`, since Decision 7's `spec/`-relocation
+  step is sequenced strictly after that merge.
 
 ## Non-goals (explicitly out of scope for M9)
 
@@ -223,7 +314,10 @@ established.
   sketched.
 - Any Migration Studio or Deployment Studio code.
 - Any infrastructure provisioning, deployment, or cloud/cluster action.
-- Relocating `spec/` (Decision 7, pending confirmation).
+- Any Avro schema for the platform event/command envelope, now or
+  later (Decision 4) -- Avro, if it appears at all, is scoped to a
+  single Python consumer's internal storage, never the platform
+  envelope.
 
 ## Acceptance criteria
 
@@ -237,12 +331,27 @@ established.
 | Representative event captured | One serialized example event is included, confirmed synthetic or fully redacted (Decision 2) -- no raw production data |
 | No code written | Track A's PR contains no Java or Python source files |
 
+**Prerequisite gate (blocking on both tracks starting code/document work)**
+
+| Criterion | Done when |
+| --- | --- |
+| Branch rebased onto real `main` | `docs/m9-foundation-scope-adr` is rebased onto `main` (containing at least `f97919f`), the rebase is clean, and the branch is pushed -- see Branch base note |
+
+**`spec/` relocation (its own commit, gates Track B only -- Decision 7)**
+
+| Criterion | Done when |
+| --- | --- |
+| WORM-adapter PR merged | `feature/worm-s3-adapter-graduation` (ADR 0010) is merged to `main` |
+| Python tree relocated | All Python packages, `scripts/`, `tests/`, `fixtures/`, `deployment/`, and `requirements*.txt` moved under `spec/` via `git mv`, as one atomic commit, separate from Track A or Track B |
+| Gate still green post-move | `python spec/scripts/check.py` passes at the same count the WORM merge left it at; `git log --follow` traces moved-file history; `git status` shows renames, not delete-plus-add |
+| CI and docs updated | CI invokes `python spec/scripts/check.py`; `spec/README.md` states the tree is the reference implementation, not the platform |
+
 **Track B (Java bootstrap)**
 
 | Criterion | Done when |
 | --- | --- |
-| Multi-module build stands up | The parent build (Maven, pending Decision 3's confirmation) builds successfully with `common/` and the walking-skeleton service as modules |
-| `common/` implements the four primitives | Event/command envelope (JSON Schema-backed, Decision 4), correlation-ID context (Decision 5), a draft `cfg.yaml` JSON Schema, and RBAC/ABAC primitive types all exist and are unit-tested |
+| Multi-module build stands up | The Maven parent build (Decision 3) builds successfully with `common/` and `services/identity` as modules |
+| `common/` implements the four primitives | Event/command envelope (Protobuf, CloudEvents v1.0 semantics, Decision 4), correlation-ID context (Decision 5), a draft `cfg.yaml` JSON Schema, and RBAC/ABAC primitive types all exist, are code-generated where applicable, and are unit-tested |
 | ArchUnit base rules exist and are proven | At least one rule per env-agnostic boundary named in ADR 0011 Decision 3 (e.g. no `services/*` module depends on a vendor SDK directly outside `adapters/*`); each rule has a negative test that plants a violation and asserts the build fails, mirroring `tests/test_check_script_gates.py` |
-| Walking-skeleton service passes the gate | `services/walking-skeleton` (Decision 6) builds, starts, serves a health endpoint, and passes every ArchUnit rule |
+| `services/identity`'s walking-skeleton commit passes the gate | `services/identity` (Decision 6) builds, starts, serves a health endpoint backed by `common/`'s RBAC primitive, and passes every ArchUnit rule -- documented in its own README as the walking-skeleton slice |
 | Full build is green | The complete Track B build (all modules, all tests, all ArchUnit rules) passes in one command, analogous to `python scripts/check.py`'s single-command regression gate |
