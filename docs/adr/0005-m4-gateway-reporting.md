@@ -43,6 +43,14 @@ row is **not** built this slice — see Non-goals.
    latest/min/max level, latest temperature/battery, and a
    consumption-rate calculation. Projection is idempotent per
    `(tenant_id, event_id)`, matching M3's at-least-once delivery model.
+   **Read-model storage: SQLite, real PostgreSQL blocked.** The projector
+   is backed by stdlib `sqlite3` (in-memory by default) with a real
+   `CREATE TABLE` schema and `ON CONFLICT ... DO UPDATE` upserts, rather
+   than a plain in-memory dict — this is deliberately the one M4 module
+   where persistence is modeled at all, since a materialized read-model's
+   whole job is persistence, and a real schema catches shape mistakes now
+   instead of at real-PostgreSQL integration time. `domain_core`,
+   `gateway`, and `migration_studio` all remain pure logic, unchanged.
 4. **Timezone/refill semantics: UTC storage and computation unchanged;
    tenant-local display only.** `reporting.timezone.to_tenant_local`
    formats an already-canonical UTC instant in a tenant-configured IANA

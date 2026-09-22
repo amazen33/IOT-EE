@@ -11,10 +11,20 @@ measurements, per M3's ADR), and does not itself carry ``device_id`` or
 consumer would require enriching the published event envelope with those
 fields, which is out of scope for this milestone and is not a defect in
 the already-gated M3 outbox/relay: see docs/reporting.md for what is
-blocked. Projecting off the outbox row still exercises the same
-at-least-once, duplicate-tolerant delivery model M3 established --
-``apply`` is idempotent per ``(tenant_id, event_id)``, exactly like
-``ingestion.kafka.IdempotentConsumer``.
+blocked.
+
+Storage decision (repository owner, see docs/reporting.md): the read-model
+is backed by ``sqlite3`` -- stdlib, no new dependency, no infrastructure
+provisioned -- with a real ``CREATE TABLE`` and SQL-level idempotency,
+rather than an in-memory Python dict. This is deliberately the one new
+M4 module where persistence is modeled at all: domain_core, gateway, and
+migration_studio must stay pure logic (enforced by
+scripts/check.py's no-forbidden-imports policy), but a materialized
+read-model's whole job is persistence, and a real schema here catches
+shape mistakes now instead of at real-PostgreSQL integration time. A real
+PostgreSQL-backed read-model table is still blocked -- this uses SQLite's
+embedded engine (in-memory by default, or a file when ``db_path`` is
+given), never a client/server database connection.
 
 All computation stays in UTC (occurred_at strings, unchanged); tenant-local
 display formatting is a presentation-only concern handled by
@@ -23,10 +33,33 @@ reporting.timezone, never by this module.
 
 from __future__ import annotations
 
+import sqlite3
 from dataclasses import dataclass
 from datetime import datetime
 
 from ingestion.outbox import RawTelemetryRecord
+
+_SCHEMA = """
+CREATE TABLE IF NOT EXISTS tank_telemetry_summary (
+    tenant_id TEXT NOT NULL,
+    device_id TEXT NOT NULL,
+    sample_count INTEGER NOT NULL,
+    latest_level_percent REAL NOT NULL,
+    min_level_percent REAL NOT NULL,
+    max_level_percent REAL NOT NULL,
+    latest_temperature_c REAL NOT NULL,
+    latest_battery_percent REAL NOT NULL,
+    last_reading_at TEXT NOT NULL,
+    consumption_rate_percent_per_hour REAL,
+    PRIMARY KEY (tenant_id, device_id)
+);
+
+CREATE TABLE IF NOT EXISTS processed_telemetry_events (
+    tenant_id TEXT NOT NULL,
+    event_id TEXT NOT NULL,
+    PRIMARY KEY (tenant_id, event_id)
+);
+"""
 
 
 @dataclass(frozen=True)
@@ -47,55 +80,136 @@ def _parse(occurred_at: str) -> datetime:
     return datetime.fromisoformat(occurred_at.replace("Z", "+00:00"))
 
 
-class TelemetrySummaryProjector:
-    """In-memory read-model store. A real deployment would materialize
-    this into a PostgreSQL read-model table (M4's non-goal list, see
-    docs/reporting.md); this models the projection logic itself, testable
-    without a database."""
+def _row_to_summary(row: tuple) -> TankTelemetrySummary:
+    (
+        tenant_id, device_id, sample_count, latest_level_percent, min_level_percent,
+        max_level_percent, latest_temperature_c, latest_battery_percent, last_reading_at,
+        consumption_rate_percent_per_hour,
+    ) = row
+    return TankTelemetrySummary(
+        tenant_id=tenant_id,
+        device_id=device_id,
+        sample_count=sample_count,
+        latest_level_percent=latest_level_percent,
+        min_level_percent=min_level_percent,
+        max_level_percent=max_level_percent,
+        latest_temperature_c=latest_temperature_c,
+        latest_battery_percent=latest_battery_percent,
+        last_reading_at=last_reading_at,
+        consumption_rate_percent_per_hour=consumption_rate_percent_per_hour,
+    )
 
-    def __init__(self) -> None:
-        self._summaries: dict[tuple[str, str], TankTelemetrySummary] = {}
-        self._processed_event_ids: set[tuple[str, str]] = set()
+
+class TelemetrySummaryProjector:
+    """SQLite-backed read-model store. ``db_path`` defaults to an
+    isolated in-memory database (no file, no infrastructure); passing a
+    path is supported for a future on-disk synthetic run but is not
+    exercised by this milestone's tests. A real PostgreSQL-backed
+    deployment is still blocked -- see docs/reporting.md."""
+
+    def __init__(self, db_path: str = ":memory:") -> None:
+        self._conn = sqlite3.connect(db_path)
+        self._conn.executescript(_SCHEMA)
+        self._conn.commit()
+
+    def close(self) -> None:
+        self._conn.close()
+
+    def __enter__(self) -> "TelemetrySummaryProjector":
+        return self
+
+    def __exit__(self, *exc_info) -> None:
+        self.close()
 
     def apply(self, record: RawTelemetryRecord) -> TankTelemetrySummary | None:
         """Projects one raw telemetry row into the running summary for its
         (tenant_id, device_id). Returns None, without changing state, if
         this event_id was already applied for this tenant -- the same
-        at-least-once-tolerant idempotency M3's consumer provides."""
-        dedup_key = (record.tenant_id, record.event_id)
-        if dedup_key in self._processed_event_ids:
-            return None
+        at-least-once-tolerant idempotency M3's consumer provides. The
+        dedup check, the read of the previous summary, and both writes
+        happen inside a single SQLite transaction: either the whole
+        update lands, or none of it does.
+        """
+        with self._conn:
+            already_processed = self._conn.execute(
+                "SELECT 1 FROM processed_telemetry_events WHERE tenant_id = ? AND event_id = ?",
+                (record.tenant_id, record.event_id),
+            ).fetchone()
+            if already_processed is not None:
+                return None
 
-        key = (record.tenant_id, record.device_id)
-        previous = self._summaries.get(key)
-        level = float(record.payload["level_percent"])
-        temperature = float(record.payload["temperature_c"])
-        battery = float(record.payload["battery_percent"])
+            previous_row = self._conn.execute(
+                "SELECT * FROM tank_telemetry_summary WHERE tenant_id = ? AND device_id = ?",
+                (record.tenant_id, record.device_id),
+            ).fetchone()
+            previous = _row_to_summary(previous_row) if previous_row is not None else None
 
-        consumption_rate = None
-        if previous is not None:
-            hours_elapsed = (_parse(record.occurred_at) - _parse(previous.last_reading_at)).total_seconds() / 3600.0
-            if hours_elapsed > 0:
-                consumption_rate = (level - previous.latest_level_percent) / hours_elapsed
+            level = float(record.payload["level_percent"])
+            temperature = float(record.payload["temperature_c"])
+            battery = float(record.payload["battery_percent"])
 
-        summary = TankTelemetrySummary(
-            tenant_id=record.tenant_id,
-            device_id=record.device_id,
-            sample_count=1 if previous is None else previous.sample_count + 1,
-            latest_level_percent=level,
-            min_level_percent=level if previous is None else min(level, previous.min_level_percent),
-            max_level_percent=level if previous is None else max(level, previous.max_level_percent),
-            latest_temperature_c=temperature,
-            latest_battery_percent=battery,
-            last_reading_at=record.occurred_at,
-            consumption_rate_percent_per_hour=consumption_rate,
-        )
-        self._summaries[key] = summary
-        self._processed_event_ids.add(dedup_key)
+            consumption_rate = None
+            if previous is not None:
+                hours_elapsed = (
+                    _parse(record.occurred_at) - _parse(previous.last_reading_at)
+                ).total_seconds() / 3600.0
+                if hours_elapsed > 0:
+                    consumption_rate = (level - previous.latest_level_percent) / hours_elapsed
+
+            summary = TankTelemetrySummary(
+                tenant_id=record.tenant_id,
+                device_id=record.device_id,
+                sample_count=1 if previous is None else previous.sample_count + 1,
+                latest_level_percent=level,
+                min_level_percent=level if previous is None else min(level, previous.min_level_percent),
+                max_level_percent=level if previous is None else max(level, previous.max_level_percent),
+                latest_temperature_c=temperature,
+                latest_battery_percent=battery,
+                last_reading_at=record.occurred_at,
+                consumption_rate_percent_per_hour=consumption_rate,
+            )
+
+            self._conn.execute(
+                """
+                INSERT INTO tank_telemetry_summary (
+                    tenant_id, device_id, sample_count, latest_level_percent, min_level_percent,
+                    max_level_percent, latest_temperature_c, latest_battery_percent, last_reading_at,
+                    consumption_rate_percent_per_hour
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (tenant_id, device_id) DO UPDATE SET
+                    sample_count = excluded.sample_count,
+                    latest_level_percent = excluded.latest_level_percent,
+                    min_level_percent = excluded.min_level_percent,
+                    max_level_percent = excluded.max_level_percent,
+                    latest_temperature_c = excluded.latest_temperature_c,
+                    latest_battery_percent = excluded.latest_battery_percent,
+                    last_reading_at = excluded.last_reading_at,
+                    consumption_rate_percent_per_hour = excluded.consumption_rate_percent_per_hour
+                """,
+                (
+                    summary.tenant_id, summary.device_id, summary.sample_count, summary.latest_level_percent,
+                    summary.min_level_percent, summary.max_level_percent, summary.latest_temperature_c,
+                    summary.latest_battery_percent, summary.last_reading_at,
+                    summary.consumption_rate_percent_per_hour,
+                ),
+            )
+            self._conn.execute(
+                "INSERT INTO processed_telemetry_events (tenant_id, event_id) VALUES (?, ?)",
+                (record.tenant_id, record.event_id),
+            )
+
         return summary
 
     def summary_for(self, tenant_id: str, device_id: str) -> TankTelemetrySummary | None:
-        return self._summaries.get((tenant_id, device_id))
+        row = self._conn.execute(
+            "SELECT * FROM tank_telemetry_summary WHERE tenant_id = ? AND device_id = ?",
+            (tenant_id, device_id),
+        ).fetchone()
+        return _row_to_summary(row) if row is not None else None
 
     def summaries_for_tenant(self, tenant_id: str) -> list[TankTelemetrySummary]:
-        return [summary for (tid, _), summary in self._summaries.items() if tid == tenant_id]
+        rows = self._conn.execute(
+            "SELECT * FROM tank_telemetry_summary WHERE tenant_id = ? ORDER BY device_id",
+            (tenant_id,),
+        ).fetchall()
+        return [_row_to_summary(row) for row in rows]

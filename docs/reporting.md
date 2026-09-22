@@ -29,7 +29,15 @@ eventually displayed.
   `ingestion.outbox.RawTelemetryRecord` rows, idempotent per
   `(tenant_id, event_id)`, tracking latest/min/max level, latest
   temperature/battery, and a consumption-rate-percent-per-hour
-  calculation).
+  calculation). **Storage: SQLite** (stdlib `sqlite3`, in-memory by
+  default) with a real `CREATE TABLE` schema and SQL-level idempotency
+  (`ON CONFLICT ... DO UPDATE`, a `processed_telemetry_events` dedup
+  table) — chosen over a plain in-memory dict so the read-model's schema
+  and query shape are exercised now, closer to the eventual PostgreSQL
+  table, without provisioning any real database. This is the one M4
+  module where persistence is modeled at all; every other new package
+  (`gateway`) stays pure logic, same as `domain_core` and
+  `migration_studio`.
 - `reporting/timezone.py` — `to_tenant_local` (UTC -> tenant IANA
   timezone display formatting only; storage/computation stay UTC).
 - `reporting/publication.py` — `generate_tank_telemetry_report`
@@ -50,7 +58,11 @@ eventually displayed.
   Kafka consumer requires enriching the published event envelope — real,
   useful follow-up work, not implemented here.
 - **A materialized PostgreSQL read-model table.** `TelemetrySummaryProjector`
-  is in-memory; no database connection exists.
+  is backed by SQLite's embedded engine (in-memory by default, or a local
+  file if a path is passed — not exercised by this milestone's tests),
+  never a client/server database connection. Migrating the same schema
+  shape to a real PostgreSQL read-model table is real follow-up work, not
+  done here.
 - **A real report-approval workflow.** `publish_report` checks a single
   `reports.publish` permission; no multi-party approval, no named report
   approvers (still an open input per `docs/inputs.md`), and no

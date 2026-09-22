@@ -98,6 +98,26 @@ class TelemetrySummaryProjectorTests(unittest.TestCase):
         projector = TelemetrySummaryProjector()
         self.assertIsNone(projector.summary_for("synthetic-tenant-a", "synthetic-device-unknown"))
 
+    def test_separate_projector_instances_have_isolated_storage(self):
+        # Each projector defaults to its own in-memory SQLite database, no
+        # file, no shared state between instances.
+        first = TelemetrySummaryProjector()
+        second = TelemetrySummaryProjector()
+        first.apply(
+            _record("synthetic-event-001", "synthetic-tenant-a", "synthetic-device-001",
+                    "2026-01-01T00:00:00Z", 60.0, 20.0, 90)
+        )
+        self.assertIsNone(second.summary_for("synthetic-tenant-a", "synthetic-device-001"))
+
+    def test_context_manager_closes_the_connection(self):
+        with TelemetrySummaryProjector() as projector:
+            projector.apply(
+                _record("synthetic-event-001", "synthetic-tenant-a", "synthetic-device-001",
+                        "2026-01-01T00:00:00Z", 60.0, 20.0, 90)
+            )
+        with self.assertRaises(Exception):
+            projector.summary_for("synthetic-tenant-a", "synthetic-device-001")
+
 
 class SyntheticFixtureTests(unittest.TestCase):
     def setUp(self):
