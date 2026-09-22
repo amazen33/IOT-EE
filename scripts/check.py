@@ -103,6 +103,7 @@ def _check_required_artifacts():
         "tests/test_reporting_telemetry_summary.py",
         "tests/test_reporting_timezone.py",
         "tests/test_reporting_publication.py",
+        "requirements.txt",
     ]
     for name in required:
         if not (ROOT / name).is_file() or not (ROOT / name).stat().st_size:

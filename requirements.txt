@@ -1,0 +1,15 @@
+# Project dependency policy (see docs/adr/0005-m4-gateway-reporting.md,
+# decision 5, and docs/reporting.md): dependencies here must be pure-data
+# or otherwise zero-risk packages only, pinned to a minimum version,
+# added via reviewed PR -- never an unpinned or transitively-resolved
+# addition. This file is the project's first: M0-M4's actual code stayed
+# 100% stdlib-only; this single entry exists only because Python's
+# zoneinfo (stdlib) has no bundled timezone database on Windows and
+# depends on the platform providing one.
+
+# CPython-team-maintained IANA timezone database, published to keep
+# zoneinfo (stdlib, used by reporting.timezone) working on platforms with
+# no system tzdata -- primarily Windows, including GitHub Actions'
+# windows-latest runner. Pure data, no importable code of its own; see
+# https://docs.python.org/3/library/zoneinfo.html#data-sources.
+tzdata>=2024.1

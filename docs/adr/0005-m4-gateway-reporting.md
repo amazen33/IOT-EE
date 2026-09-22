@@ -13,8 +13,9 @@ listed open inputs gating this milestone: UI priorities, identity
 provider, hierarchy/location rules, report definitions and sanitized
 expected results, timezone/refill-consumption semantics, accessible
 design requirements, report approvers. The repository owner narrowed this
-milestone's actual deliverable and supplied four decisions (recorded
-below); the full SSR/WebSocket/accessibility surface named in the gate
+milestone's actual deliverable and supplied four decisions gating scope
+(recorded below as 1-4); decision 5 (dependency policy) followed from a
+CI failure discovered after implementation, not a pre-scoped input; the full SSR/WebSocket/accessibility surface named in the gate
 row is **not** built this slice — see Non-goals.
 
 ## Decisions
@@ -58,6 +59,21 @@ row is **not** built this slice — see Non-goals.
    in `telemetry_summary`, the report's content-hash fingerprint in
    `publication` — stays in UTC; no calendar-aware billing period or
    refill-cycle semantics are introduced.
+
+5. **First external dependency: `tzdata`, pure-data only, pinned.**
+   `reporting.timezone` uses stdlib `zoneinfo`, which has no bundled
+   timezone database on Windows and depends on the platform providing
+   one — GitHub Actions' `windows-latest` runner has none, so CI failed
+   resolving even `'UTC'`. `requirements.txt` pins `tzdata>=2024.1`, the
+   CPython-team-maintained IANA database package with no importable
+   code of its own, installed in CI before the gate runs. This is the
+   project's first dependency after M0-M4's fully stdlib-only code, and
+   sets the precedent for `docs/inputs.md`'s still-open
+   "dependency/security tooling policy" input: a new dependency must be
+   pure-data or otherwise zero-risk, pinned to a minimum version, and
+   added via reviewed PR — never unpinned or pulled in transitively
+   without review. Broader tooling (automated scanning, license policy,
+   upgrade cadence) remains an open input.
 
 "Reconciled certified reports and publication approval"
 (`reporting.publication.publish_report`) is modeled as a

@@ -39,7 +39,11 @@ eventually displayed.
   (`gateway`) stays pure logic, same as `domain_core` and
   `migration_studio`.
 - `reporting/timezone.py` — `to_tenant_local` (UTC -> tenant IANA
-  timezone display formatting only; storage/computation stay UTC).
+  timezone display formatting only; storage/computation stay UTC). Backed
+  by stdlib `zoneinfo` plus the `tzdata` package (see ADR 0005 decision 5
+  and `requirements.txt`) — required because Windows (including GitHub
+  Actions' `windows-latest` runner) ships no system IANA database for
+  `zoneinfo` to fall back on.
 - `reporting/publication.py` — `generate_tank_telemetry_report`
   (tenant/permission-gated report generation via `gateway.auth`),
   `ReportRow`, `publish_report` (a `reports.publish`-gated action that
