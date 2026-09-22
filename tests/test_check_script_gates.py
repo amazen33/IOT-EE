@@ -50,6 +50,28 @@ class BillingIsolationGateTests(unittest.TestCase):
                 check._check_billing_isolation()
 
 
+class DeploymentStudioIsolationGateTests(unittest.TestCase):
+    def test_passes_on_the_current_codebase(self):
+        check._check_deployment_studio_isolation()  # must not raise
+
+    def test_raises_when_deployment_studio_imports_evidence(self):
+        with _PlantedImportFixture("deployment_studio", "import evidence"):
+            with self.assertRaises(ValueError):
+                check._check_deployment_studio_isolation()
+        # Cleanup happened; the gate is clean again.
+        check._check_deployment_studio_isolation()
+
+    def test_raises_for_a_from_import_form_too(self):
+        with _PlantedImportFixture("deployment_studio", "from firmware import rollout"):
+            with self.assertRaises(ValueError):
+                check._check_deployment_studio_isolation()
+
+    def test_billing_isolation_also_covers_deployment_studio(self):
+        with _PlantedImportFixture("deployment_studio", "import billing"):
+            with self.assertRaises(ValueError):
+                check._check_billing_isolation()
+
+
 class NoForbiddenImportsGateTests(unittest.TestCase):
     def test_passes_on_the_current_codebase_for_every_checked_package(self):
         for package_name in check._CORE_PACKAGES_FORBIDDEN_FROM_IMPORTING_BILLING:

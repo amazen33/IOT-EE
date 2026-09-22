@@ -95,4 +95,17 @@ required review checks before collaborative delivery.
   available -- there is no feature-entitlement check anywhere in this
   package. No real payment provider, invoicing, or tax/currency handling
   exists yet -- see [`docs/billing.md`](docs/billing.md).
-- M8 onward: not started.
+- **M8 — Deployment Studio/multi-environment done, plan/validate-only, real apply blocked**:
+  an immutable, append-only, versioned deployment-profile registry with
+  default-deny lookup (closed environment/provider/region enums, prod
+  requires approval); an RBAC-gated plan lifecycle (draft, validated,
+  approved/rejected) with a required, write-once approval-audit trail;
+  structural IaC-document validation that refuses any `apply: true`
+  document; a least-privilege runner-policy contract that can never
+  declare apply/destroy; and GitOps drift detection between a plan's
+  desired state and a supplied observed-state snapshot. No real
+  terraform/ansible apply, cloud API call, GitOps controller connection,
+  or live infrastructure read exists yet -- see
+  [`docs/deployment-studio.md`](docs/deployment-studio.md).
+- All CLAUDE.md milestones (M0-M8) have an initial, contract-gated slice complete;
+  each stage's real-backend items remain individually documented as blocked in its own docs page.

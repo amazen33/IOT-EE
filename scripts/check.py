@@ -36,7 +36,14 @@ _FORBIDDEN_IMPORTS_FOR_DOMAIN_MODULES = {
 # don't hardcode a second list elsewhere.
 _CORE_PACKAGES_FORBIDDEN_FROM_IMPORTING_BILLING = (
     "domain_core", "migration_studio", "ingestion", "gateway", "reporting", "firmware", "evidence", "foundation",
+    "deployment_studio",
 )
+
+# M8: deployment_studio must stay a leaf package with respect to the
+# other bounded contexts it could plausibly (and wrongly) reach into --
+# e.g. firmware rollout state or billing's deployment tier. Enforced
+# mechanically by _check_deployment_studio_isolation.
+_DEPLOYMENT_STUDIO_FORBIDDEN_IMPORTS = ("billing", "firmware", "evidence", "gateway")
 
 
 def _check_required_artifacts():
@@ -164,6 +171,27 @@ def _check_required_artifacts():
         "tests/test_billing_flag_matrix.py",
         "tests/test_billing_fixture.py",
         "tests/test_check_script_gates.py",
+        # M8 (Deployment Studio/multi-environment, plan/validate-only;
+        # see CLAUDE.md's milestone list and docs/adr/0009-m8-deployment-studio.md)
+        "docs/adr/0009-m8-deployment-studio.md",
+        "docs/deployment-studio.md",
+        "deployment_studio/__init__.py",
+        "deployment_studio/profiles.py",
+        "deployment_studio/approval.py",
+        "deployment_studio/audit.py",
+        "deployment_studio/plan.py",
+        "deployment_studio/iac.py",
+        "deployment_studio/runner.py",
+        "deployment_studio/gitops.py",
+        "fixtures/deployment_profiles.synthetic.json",
+        "tests/test_deployment_studio_profiles.py",
+        "tests/test_deployment_studio_approval.py",
+        "tests/test_deployment_studio_audit.py",
+        "tests/test_deployment_studio_plan.py",
+        "tests/test_deployment_studio_iac.py",
+        "tests/test_deployment_studio_runner.py",
+        "tests/test_deployment_studio_gitops.py",
+        "tests/test_deployment_studio_fixture.py",
     ]
     for name in required:
         if not (ROOT / name).is_file() or not (ROOT / name).stat().st_size:
@@ -326,36 +354,53 @@ def _check_m6_evidence_policy():
             raise ValueError("Evidence-record fixture tenant ids must be synthetic")
 
 
-def _check_billing_isolation():
-    """Mechanically enforce M7's billing-outage isolation requirement: no
-    other domain package may import billing at all, including from a
-    subpackage (rglob, not glob -- see _check_no_forbidden_imports for
-    why subpackages must be covered, and why transitive imports don't
-    need a separate graph analyzer: rglob already scans every file in a
-    real chain individually). Billing can only be reached through
-    billing.flags.MonetizationFlags.is_monetization_enabled, never by a
-    core package reaching into billing directly.
+def _check_forbidden_package_imports(scanned_package, forbidden_names):
+    """Shared engine behind _check_billing_isolation and
+    _check_deployment_studio_isolation: ast-scans every .py file in
+    scanned_package, including subpackages (rglob, not glob -- see
+    _check_no_forbidden_imports for why subpackages must be covered, and
+    why transitive imports don't need a separate graph analyzer: rglob
+    already scans every file in a real chain individually), and raises
+    if any of forbidden_names is imported.
 
     Known, documented limitation: a dynamic import such as
-    importlib.import_module("billing") is not visible to static AST
-    walking and is not caught here -- recorded as a gap, not silently
-    ignored, per the same discipline as M6/M7's other blocked items (see
-    docs/billing.md).
+    importlib.import_module(name) is not visible to static AST walking
+    and is not caught here -- recorded as a gap, not silently ignored,
+    per the same discipline as M6/M7/M8's other blocked items (see
+    docs/billing.md and docs/deployment-studio.md).
     """
+    forbidden_names = set(forbidden_names)
+    for py_file in sorted((ROOT / scanned_package).rglob("*.py")):
+        tree = ast.parse(py_file.read_text(), filename=str(py_file))
+        for node in ast.walk(tree):
+            names = []
+            if isinstance(node, ast.Import):
+                names = [alias.name.split(".")[0] for alias in node.names]
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                names = [node.module.split(".")[0]]
+            hit = set(names) & forbidden_names
+            if hit:
+                raise ValueError(
+                    f"{py_file.relative_to(ROOT)} imports forbidden module(s) {sorted(hit)}; "
+                    f"{scanned_package} must not depend on {sorted(forbidden_names)}"
+                )
+
+
+def _check_billing_isolation():
+    """Mechanically enforce M7's billing-outage isolation requirement: no
+    other domain package may import billing at all. Billing can only be
+    reached through billing.flags.MonetizationFlags.is_monetization_enabled,
+    never by a core package reaching into billing directly."""
     for package_name in _CORE_PACKAGES_FORBIDDEN_FROM_IMPORTING_BILLING:
-        for py_file in sorted((ROOT / package_name).rglob("*.py")):
-            tree = ast.parse(py_file.read_text(), filename=str(py_file))
-            for node in ast.walk(tree):
-                names = []
-                if isinstance(node, ast.Import):
-                    names = [alias.name.split(".")[0] for alias in node.names]
-                elif isinstance(node, ast.ImportFrom) and node.module:
-                    names = [node.module.split(".")[0]]
-                if "billing" in names:
-                    raise ValueError(
-                        f"{py_file.relative_to(ROOT)} imports 'billing'; core packages must never "
-                        "depend on billing (see docs/adr/0008-m7-monetization.md)"
-                    )
+        _check_forbidden_package_imports(package_name, {"billing"})
+
+
+def _check_deployment_studio_isolation():
+    """Mechanically enforce M8's deployment_studio isolation requirement:
+    it must not import billing, firmware, evidence, or gateway -- it
+    stays a leaf package, reachable by nothing it shouldn't be and
+    reaching into nothing it shouldn't need."""
+    _check_forbidden_package_imports("deployment_studio", _DEPLOYMENT_STUDIO_FORBIDDEN_IMPORTS)
 
 
 def _check_m7_billing_policy():
@@ -376,6 +421,25 @@ def _check_m7_billing_policy():
             raise ValueError("Billing fixture plan ids must be synthetic")
 
 
+def _check_m8_deployment_studio_policy():
+    # deployment_studio/ is M8's new package: multi-environment
+    # deployment profiles, plan lifecycle/approval, a runner-policy
+    # contract, and GitOps drift detection -- plan/validate-only. Same
+    # no-network/process-import policy as every prior domain package,
+    # plus the isolation check.
+    _check_no_forbidden_imports("deployment_studio")
+    _check_deployment_studio_isolation()
+
+    fixture = json.loads((ROOT / "fixtures/deployment_profiles.synthetic.json").read_text())
+    if not fixture.get("profiles"):
+        raise ValueError("Synthetic deployment-profile fixture entries required")
+    for entry in fixture["profiles"]:
+        if not entry.get("profile_id", "").startswith("synthetic-"):
+            raise ValueError("Deployment-profile fixture ids must be synthetic")
+        if not entry.get("tenant_id", "").startswith("synthetic-"):
+            raise ValueError("Deployment-profile fixture tenant ids must be synthetic")
+
+
 def main():
     _check_required_artifacts()
     _check_m0_inert_plan_and_fixtures()
@@ -386,6 +450,7 @@ def main():
     _check_m5_firmware_policy()
     _check_m6_evidence_policy()
     _check_m7_billing_policy()
+    _check_m8_deployment_studio_policy()
 
     suite = unittest.defaultTestLoader.discover(str(ROOT / "tests"))
     if suite.countTestCases() == 0:

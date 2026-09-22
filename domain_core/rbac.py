@@ -43,6 +43,8 @@ PERMISSION_CATALOG = frozenset(
         "rules.manage",
         "firmware.manage",
         "evidence.legal_hold",
+        "deployment.approve_profile",
+        "deployment.approve_plan",
     }
 )
 
