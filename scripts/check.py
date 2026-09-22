@@ -45,6 +45,43 @@ _CORE_PACKAGES_FORBIDDEN_FROM_IMPORTING_BILLING = (
 # mechanically by _check_deployment_studio_isolation.
 _DEPLOYMENT_STUDIO_FORBIDDEN_IMPORTS = ("billing", "firmware", "evidence", "gateway")
 
+# Graduation (post-M8): adapters/ holds real-backend implementations of
+# this project's provider-neutral contracts, starting with
+# adapters.worm_s3.S3WormStore -- a real (test-target-only)
+# S3-compatible implementation of evidence.worm.WormStore. Framed as a
+# graduation of one already-blocked M6 item, not a new numbered
+# milestone in CLAUDE.md's list. See
+# docs/adr/0010-worm-s3-adapter-graduation.md and
+# docs/adapters-worm-s3.md.
+_CORE_PACKAGES_FORBIDDEN_FROM_IMPORTING_ADAPTERS = (
+    "domain_core", "migration_studio", "ingestion", "gateway", "reporting", "firmware", "evidence", "foundation",
+    "billing", "deployment_studio",
+)
+
+# adapters.worm_s3 may implement evidence.worm.WormStore for real, but
+# must not reach into billing, firmware, gateway, or deployment_studio --
+# a real evidence backend has no business touching money, firmware
+# rollout, gateway auth, or deployment approvals.
+_ADAPTERS_WORM_S3_FORBIDDEN_IMPORTS = ("billing", "firmware", "gateway", "deployment_studio")
+
+# adapters.worm_s3 is the one package in this repo allowed a real
+# third-party SDK (boto3, lazily imported -- see
+# _check_boto3_imported_lazily) because that is its entire purpose: a
+# real S3-compatible backend for evidence.worm.WormStore. In exchange it
+# is held to a narrow allowlist instead of _check_no_forbidden_imports's
+# denylist -- anything not listed here (a raw socket, an unrelated HTTP
+# client, a messaging library, subprocess) is scope creep and must be
+# added deliberately, not slip in silently.
+_ADAPTERS_WORM_S3_IMPORT_ALLOWLIST = {"__future__", "json", "os", "datetime", "evidence", "boto3", "adapters"}
+
+# boto3/botocore must appear nowhere else in the repo -- core stays
+# zero-third-party-dependency (ADR 0005), even though adapters/worm_s3
+# itself is allowed the real SDK as an optional extra.
+_ALL_NON_ADAPTER_TOP_LEVEL_PACKAGES = (
+    "domain_core", "migration_studio", "ingestion", "gateway", "reporting", "firmware", "evidence", "foundation",
+    "billing", "deployment_studio", "scripts", "tests",
+)
+
 
 def _check_required_artifacts():
     required = [
@@ -192,6 +229,22 @@ def _check_required_artifacts():
         "tests/test_deployment_studio_runner.py",
         "tests/test_deployment_studio_gitops.py",
         "tests/test_deployment_studio_fixture.py",
+        # Graduation (post-M8): a real (test-target-only) S3-compatible
+        # implementation of evidence.worm.WormStore, kept outside every
+        # inert core package -- see
+        # docs/adr/0010-worm-s3-adapter-graduation.md and
+        # docs/adapters-worm-s3.md.
+        "docs/adr/0010-worm-s3-adapter-graduation.md",
+        "docs/adapters-worm-s3.md",
+        "adapters/__init__.py",
+        "adapters/worm_s3/__init__.py",
+        "adapters/worm_s3/store.py",
+        "requirements-adapters-s3.txt",
+        "fixtures/adapters_worm_s3.synthetic.json",
+        "tests/test_adapters_worm_s3_contract.py",
+        "tests/test_adapters_worm_s3_not_installed.py",
+        "tests/test_adapters_worm_s3_live.py",
+        "tests/test_adapters_worm_s3_fixture.py",
     ]
     for name in required:
         if not (ROOT / name).is_file() or not (ROOT / name).stat().st_size:
@@ -403,6 +456,103 @@ def _check_deployment_studio_isolation():
     _check_forbidden_package_imports("deployment_studio", _DEPLOYMENT_STUDIO_FORBIDDEN_IMPORTS)
 
 
+def _check_import_allowlist(package_name, allowed_names):
+    """Inverse of _check_no_forbidden_imports: for a package that
+    legitimately needs real I/O (adapters.worm_s3), ban everything not
+    explicitly allowed instead of banning a fixed denylist -- scope
+    creep (an unrelated network client, a messaging library, a
+    subprocess call) doesn't slip in unnoticed."""
+    allowed = set(allowed_names)
+    for py_file in sorted((ROOT / package_name).rglob("*.py")):
+        tree = ast.parse(py_file.read_text(), filename=str(py_file))
+        for node in ast.walk(tree):
+            names = []
+            if isinstance(node, ast.Import):
+                names = [alias.name.split(".")[0] for alias in node.names]
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                names = [node.module.split(".")[0]]
+            extra = set(names) - allowed
+            if extra:
+                raise ValueError(
+                    f"{py_file.relative_to(ROOT)} imports {sorted(extra)}, not on {package_name}'s "
+                    f"allowlist {sorted(allowed)}"
+                )
+
+
+def _check_boto3_imported_lazily():
+    """adapters.worm_s3 must never import boto3 at module scope -- only
+    inside a function body -- so importing the module itself (e.g. to
+    reference S3WormStore, or to pass in a fake client for tests) never
+    raises a bare ImportError when the optional extra isn't installed.
+    AdapterNotInstalledError, raised from inside the lazy import, is the
+    only surfaced error."""
+    for py_file in sorted((ROOT / "adapters" / "worm_s3").rglob("*.py")):
+        tree = ast.parse(py_file.read_text(), filename=str(py_file))
+        for node in tree.body:
+            names = []
+            if isinstance(node, ast.Import):
+                names = [alias.name.split(".")[0] for alias in node.names]
+            elif isinstance(node, ast.ImportFrom) and node.module:
+                names = [node.module.split(".")[0]]
+            if "boto3" in names:
+                raise ValueError(
+                    f"{py_file.relative_to(ROOT)} imports boto3 at module scope; "
+                    "adapters.worm_s3 must lazy-import it inside a function"
+                )
+
+
+def _check_adapters_isolation():
+    """Mechanically enforce the graduation's isolation requirement: no
+    inert core package may import adapters (a real backend is wired in
+    only at a composition root outside all of them), and adapters.worm_s3
+    itself may not reach into billing, firmware, gateway, or
+    deployment_studio -- a real evidence backend has no business touching
+    money, firmware rollout, gateway auth, or deployment approvals."""
+    for package_name in _CORE_PACKAGES_FORBIDDEN_FROM_IMPORTING_ADAPTERS:
+        _check_forbidden_package_imports(package_name, {"adapters"})
+    _check_forbidden_package_imports("adapters/worm_s3", _ADAPTERS_WORM_S3_FORBIDDEN_IMPORTS)
+
+
+def _check_boto3_confined_to_adapters():
+    """boto3/botocore may appear nowhere in this repo except under
+    adapters/ (currently adapters/worm_s3) -- everywhere else keeps the
+    project's zero-third-party-dependency-in-core discipline (ADR 0005),
+    even though adapters/ itself is allowed the real SDK as an optional
+    extra."""
+    for package_name in _ALL_NON_ADAPTER_TOP_LEVEL_PACKAGES:
+        _check_forbidden_package_imports(package_name, {"boto3", "botocore"})
+
+
+def _check_requirements_txt_has_no_boto3():
+    content = (ROOT / "requirements.txt").read_text().lower()
+    if "boto3" in content or "botocore" in content:
+        raise ValueError("requirements.txt must stay free of boto3/botocore; see requirements-adapters-s3.txt")
+
+
+def _check_worm_s3_adapter_graduation_policy():
+    # adapters/worm_s3 is this stage's graduation of one already-blocked
+    # M6 item: a real (test-target-only) S3-compatible WormStore
+    # implementation, living outside every inert core package, behind
+    # evidence.worm's existing provider-neutral WormStore contract. It is
+    # deliberately exempt from _check_no_forbidden_imports (boto3 is its
+    # entire purpose) and held instead to a narrow import allowlist, a
+    # lazy-import requirement, and the isolation/confinement checks below.
+    _check_import_allowlist("adapters/worm_s3", _ADAPTERS_WORM_S3_IMPORT_ALLOWLIST)
+    _check_boto3_imported_lazily()
+    _check_adapters_isolation()
+    _check_boto3_confined_to_adapters()
+    _check_requirements_txt_has_no_boto3()
+
+    fixture = json.loads((ROOT / "fixtures/adapters_worm_s3.synthetic.json").read_text())
+    if not fixture.get("records"):
+        raise ValueError("Synthetic adapters.worm_s3 fixture entries required")
+    for entry in fixture["records"]:
+        if not entry.get("record_id", "").startswith("synthetic-"):
+            raise ValueError("adapters.worm_s3 fixture record ids must be synthetic")
+        if not entry.get("tenant_id", "").startswith("synthetic-"):
+            raise ValueError("adapters.worm_s3 fixture tenant ids must be synthetic")
+
+
 def _check_m7_billing_policy():
     # billing/ is M7's new package: monetization behind a runtime feature
     # flag. Same no-network/process-import policy as every prior domain
@@ -451,6 +601,7 @@ def main():
     _check_m6_evidence_policy()
     _check_m7_billing_policy()
     _check_m8_deployment_studio_policy()
+    _check_worm_s3_adapter_graduation_policy()
 
     suite = unittest.defaultTestLoader.discover(str(ROOT / "tests"))
     if suite.countTestCases() == 0:

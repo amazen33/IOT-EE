@@ -107,5 +107,18 @@ required review checks before collaborative delivery.
   terraform/ansible apply, cloud API call, GitOps controller connection,
   or live infrastructure read exists yet -- see
   [`docs/deployment-studio.md`](docs/deployment-studio.md).
+- **Graduation (post-M8) -- a real (test-target) S3 WORM adapter**:
+  `adapters.worm_s3.S3WormStore`, a real S3-compatible implementation of
+  `evidence.worm.WormStore` using genuine S3 Object Lock for legal hold
+  and retention, kept outside every inert core package and wired in only
+  as an optional extra (`requirements-adapters-s3.txt`, lazily imported
+  -- `requirements.txt` is unchanged). Scoped to a synthetic/test bucket
+  only; the one test performing real network I/O skips cleanly (reported
+  as skipped, never passed) without `WORM_S3_BUCKET` set. No production
+  bucket/region, IAM role design, indexed tenant listing, or
+  production retention claim exists yet -- see
+  [`docs/adapters-worm-s3.md`](docs/adapters-worm-s3.md).
 - All CLAUDE.md milestones (M0-M8) have an initial, contract-gated slice complete;
   each stage's real-backend items remain individually documented as blocked in its own docs page.
+  One of M6's blocked items (a real WORM backend) has since been graduated to a
+  real test-target implementation -- see the graduation bullet above.

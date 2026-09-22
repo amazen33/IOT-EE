@@ -59,9 +59,15 @@ unaddressed by this stage's code.
   `tests/test_evidence_records.py::SyntheticFixtureTests`.
 
 ## What is explicitly blocked (not passed, not silently skipped)
-- **A real WORM/object-lock backend, and its provider/region.**
-  `InMemoryWormStore` is an in-memory test double; no S3 Object Lock,
-  Azure Immutable Blob, or on-prem WORM appliance connection exists.
+- **A real WORM/object-lock backend, and its provider/region, for a
+  production deployment.** `InMemoryWormStore` remains this package's
+  own in-memory test double. A real, but test-target-only, S3-compatible
+  implementation (`adapters.worm_s3.S3WormStore`) was added post-M8,
+  outside this package, behind this same `WormStore` contract -- see
+  `docs/adapters-worm-s3.md` and
+  `docs/adr/0010-worm-s3-adapter-graduation.md`. Production
+  bucket/region selection, provisioning, and IAM role design remain
+  open.
 - **Real cross-region failover or a completed DR drill.** Nothing in this
   milestone fails over a real system; `evidence.dr` only replays already-
   captured events through existing projection logic.

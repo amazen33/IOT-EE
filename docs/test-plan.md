@@ -14,5 +14,6 @@ M0: `python scripts/check.py` runs all current unit tests, fixture validation, i
 | M6 | Append-only/WORM retention and privileged deletion tests, hash verification, fault injection, load/soak and backup restore/DR against approved RPO/RTO |
 | M7 | Finalized usage only, duplicate safety, effective-dated pricing, period closure/reversals, billing outage isolation |
 | M8 | Plan policy, least-privilege runner, approval audit, IaC validation/plan, GitOps reconciliation, isolated environment deployment and rollback across approved profiles |
+| Graduation (post-M8) | Real (test-target) S3 WORM adapter: put/get/list/legal-hold/expire contract conformance against a fake client (mandatory), plus one real-network round trip against a live test bucket, gated on `WORM_S3_BUCKET` and reported as skipped (not passed) when absent |
 
 Future gates must be implemented before claiming those stages complete. M0 tests do not establish production security, rule parity, broker connectivity, WORM retention, or infrastructure readiness. Dependency scanning/SAST, deployment smoke tests, and performance gates must expand with the chosen stack and services.
