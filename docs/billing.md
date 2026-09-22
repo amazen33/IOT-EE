@@ -76,6 +76,12 @@ provider or invoicing system.
 - **A billing-outage *notification* mechanism.** Isolation (this
   milestone) means billing failing can't break core operations; it does
   not include alerting anyone that billing failed.
+- **Dynamic imports are not caught by the isolation gate.** `scripts/check.py`'s
+  `_check_billing_isolation` (and `_check_no_forbidden_imports`) walk the
+  AST of every `.py` file in the checked packages, including
+  subpackages; a dynamic import such as `importlib.import_module("billing")`
+  or `__import__("billing")` is not visible to static AST walking and is
+  not caught. Recorded as a known limitation, not silently ignored.
 
 These are documented here as blocked, per the contract's requirement to
 record unavailable external verification as blocked rather than passed.
@@ -93,8 +99,15 @@ record unavailable external verification as blocked rather than passed.
 - No domain package other than `billing` itself may import it --
   mechanically enforced by `scripts/check.py`'s `_check_billing_isolation`,
   the same ast-based scan style as the existing no-forbidden-imports
-  policy. A billing bug or outage cannot, by construction, reach
-  telemetry ingestion, RBAC, firmware rollout, or evidence handling.
+  policy. The scan covers `foundation` as well as every other core
+  package (a widely-depended-on package left off this list would be a
+  transitive backdoor into everything that imports it), and it walks
+  subdirectories (`rglob`, not `glob`) so a future subpackage cannot
+  silently fall outside the scan. `tests/test_check_script_gates.py`
+  proves both gates actually raise on a planted violation, including one
+  planted inside a subdirectory. A billing bug or outage cannot, by
+  construction, reach telemetry ingestion, RBAC, firmware rollout, or
+  evidence handling.
 - `is_monetization_enabled` is the only flag-shaped function in this
   package; there is no parallel feature-entitlement check anywhere in
   `billing`, so a future per-feature entitlement system cannot

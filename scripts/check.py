@@ -26,13 +26,16 @@ _FORBIDDEN_IMPORTS_FOR_DOMAIN_MODULES = {
     "pymongo", "boto3", "kafka", "paho",
 }
 
-_POLICY_CHECKED_PACKAGES = ("migration_studio", "domain_core")
-
 # M7: core packages that must never depend on billing -- a billing
-# failure must never be able to reach these. Enforced mechanically by
-# _check_billing_isolation, not just documented.
+# failure must never be able to reach these. "foundation" is included
+# deliberately: scripts/check.py itself imports foundation.contracts, and
+# many core packages import foundation too, so an unguarded foundation
+# would be a transitive backdoor into every core package. Enforced
+# mechanically by _check_billing_isolation, not just documented. This is
+# the single source of truth for which packages that policy covers --
+# don't hardcode a second list elsewhere.
 _CORE_PACKAGES_FORBIDDEN_FROM_IMPORTING_BILLING = (
-    "domain_core", "migration_studio", "ingestion", "gateway", "reporting", "firmware", "evidence",
+    "domain_core", "migration_studio", "ingestion", "gateway", "reporting", "firmware", "evidence", "foundation",
 )
 
 
@@ -160,6 +163,7 @@ def _check_required_artifacts():
         "tests/test_billing_service.py",
         "tests/test_billing_flag_matrix.py",
         "tests/test_billing_fixture.py",
+        "tests/test_check_script_gates.py",
     ]
     for name in required:
         if not (ROOT / name).is_file() or not (ROOT / name).stat().st_size:
@@ -167,6 +171,12 @@ def _check_required_artifacts():
 
 
 def _check_m0_inert_plan_and_fixtures():
+    # foundation/ is M0's own package (validate_event/validate_plan) and
+    # is widely depended on by every later domain package, including by
+    # this script. It gets the same no-network/process-import scan as
+    # every other domain package, not an exemption.
+    _check_no_forbidden_imports("foundation")
+
     validate_plan(json.loads((ROOT / "deployment/m0-plan.json").read_text()))
     events = json.loads((ROOT / "fixtures/telemetry.synthetic.json").read_text())
     if not events:
@@ -185,8 +195,24 @@ def _check_m0_inert_plan_and_fixtures():
 def _check_no_forbidden_imports(package_name):
     """Mechanically enforce a domain package's non-goals rather than
     relying on convention: no network/process-capable imports anywhere in
-    it."""
-    for py_file in sorted((ROOT / package_name).glob("*.py")):
+    it, including in subpackages (rglob, not glob) -- a package that
+    starts flat and later grows a subdirectory (e.g. domain_core/policy/)
+    must not silently fall out of this scan.
+
+    Transitive imports are not graph-analyzed on purpose: with rglob,
+    every file in a real import chain is itself scanned individually
+    (A imports B imports socket means B's own file is scanned and
+    caught), so the realistic transitive case is already covered without
+    building an import-graph analyzer. Do not add one; it is unnecessary
+    complexity for what this check needs to catch.
+
+    Known, documented limitation (recorded rather than silently ignored,
+    per the same discipline as M6/M7's other blocked items): a dynamic
+    import such as importlib.import_module("socket") or
+    __import__("socket") is not visible to static AST walking and is not
+    caught by this check.
+    """
+    for py_file in sorted((ROOT / package_name).rglob("*.py")):
         tree = ast.parse(py_file.read_text(), filename=str(py_file))
         for node in ast.walk(tree):
             names = []
@@ -301,12 +327,23 @@ def _check_m6_evidence_policy():
 
 
 def _check_billing_isolation():
-    """Mechanically enforce M7's billing-outage isolation requirement:
-    no other domain package may import billing at all. Billing can only
-    be reached through billing.flags.MonetizationFlags.is_monetization_enabled,
-    never by a core package reaching into billing directly."""
+    """Mechanically enforce M7's billing-outage isolation requirement: no
+    other domain package may import billing at all, including from a
+    subpackage (rglob, not glob -- see _check_no_forbidden_imports for
+    why subpackages must be covered, and why transitive imports don't
+    need a separate graph analyzer: rglob already scans every file in a
+    real chain individually). Billing can only be reached through
+    billing.flags.MonetizationFlags.is_monetization_enabled, never by a
+    core package reaching into billing directly.
+
+    Known, documented limitation: a dynamic import such as
+    importlib.import_module("billing") is not visible to static AST
+    walking and is not caught here -- recorded as a gap, not silently
+    ignored, per the same discipline as M6/M7's other blocked items (see
+    docs/billing.md).
+    """
     for package_name in _CORE_PACKAGES_FORBIDDEN_FROM_IMPORTING_BILLING:
-        for py_file in sorted((ROOT / package_name).glob("*.py")):
+        for py_file in sorted((ROOT / package_name).rglob("*.py")):
             tree = ast.parse(py_file.read_text(), filename=str(py_file))
             for node in ast.walk(tree):
                 names = []
