@@ -1,0 +1,56 @@
+{
+  "pairs": [
+    {
+      "canonical": {
+        "event_id": "synthetic-event-401",
+        "device_id": "synthetic-device-001",
+        "occurred_at": "2026-01-01T00:00:00Z",
+        "payload": {"level_percent": 62.5, "temperature_c": 21.2, "battery_percent": 87}
+      },
+      "shadow": {
+        "event_id": "synthetic-event-401",
+        "device_id": "synthetic-device-001",
+        "occurred_at": "2026-01-01T00:00:00Z",
+        "payload": {"level_percent": 62.5, "temperature_c": 21.2, "battery_percent": 87}
+      }
+    },
+    {
+      "canonical": {
+        "event_id": "synthetic-event-402",
+        "device_id": "synthetic-device-002",
+        "occurred_at": "2026-01-01T00:01:00Z",
+        "payload": {"level_percent": 40.0, "temperature_c": 19.5, "battery_percent": 95}
+      },
+      "shadow": {
+        "event_id": "synthetic-event-402",
+        "device_id": "synthetic-device-002",
+        "occurred_at": "2026-01-01T00:01:00Z",
+        "payload": {"level_percent": 33.0, "temperature_c": 19.5, "battery_percent": 95}
+      }
+    },
+    {
+      "canonical": {
+        "event_id": "synthetic-event-403",
+        "device_id": "synthetic-device-003",
+        "occurred_at": "2026-01-01T00:02:00Z",
+        "payload": {"level_percent": 10.0, "temperature_c": 18.0, "battery_percent": 42}
+      },
+      "shadow": null
+    },
+    {
+      "canonical": null,
+      "shadow": {
+        "event_id": "synthetic-event-404",
+        "device_id": "synthetic-device-004",
+        "occurred_at": "2026-01-01T00:03:00Z",
+        "payload": {"level_percent": 75.0, "temperature_c": 22.0, "battery_percent": 60}
+      }
+    }
+  ],
+  "expected": {
+    "matched": 1,
+    "mismatched": 1,
+    "missing_canonical": 1,
+    "missing_shadow": 1
+  }
+}
