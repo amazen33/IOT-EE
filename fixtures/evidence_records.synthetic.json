@@ -1,0 +1,57 @@
+{
+  "records": [
+    {
+      "record_id": "synthetic-evidence-001",
+      "tenant_id": "synthetic-tenant-a",
+      "category": "rbac_decision",
+      "occurred_at": "2026-01-15T10:00:00Z",
+      "payload": {
+        "principal_id": "synthetic-operator-001",
+        "principal_kind": "tenant_operator",
+        "permission": "firmware.manage",
+        "allowed": true
+      },
+      "retention_until": "2031-01-15T10:00:00Z",
+      "content_sha256": "3b14707a9f07841cffc214942c8edf568c3b9ff5f2151e5fa716d08465eaf984",
+      "legal_hold": false
+    },
+    {
+      "record_id": "synthetic-evidence-002",
+      "tenant_id": "synthetic-tenant-a",
+      "category": "firmware_rollout_event",
+      "occurred_at": "2026-01-16T08:30:00Z",
+      "payload": {
+        "artifact_id": "synthetic-firmware-001",
+        "device_id": "synthetic-device-001",
+        "ring": "canary",
+        "status": "rolled_back",
+        "current_version": "1.2.2",
+        "previous_version": null
+      },
+      "retention_until": "2031-01-16T08:30:00Z",
+      "content_sha256": "283a5554bdfc3efd36d7262b5795a93434a7cff93a7a4be90baaaf0bd58776b0",
+      "legal_hold": true
+    },
+    {
+      "record_id": "synthetic-evidence-003",
+      "tenant_id": "synthetic-tenant-b",
+      "category": "shadow_parity_comparison",
+      "occurred_at": "2026-01-17T12:00:00Z",
+      "payload": {
+        "event_id": "synthetic-event-001",
+        "status": "mismatch",
+        "differences": [
+          {
+            "field_name": "level_percent",
+            "canonical_value": 41.2,
+            "shadow_value": 40.9,
+            "delta": 0.3
+          }
+        ]
+      },
+      "retention_until": "2026-02-17T12:00:00Z",
+      "content_sha256": "ba223b288a283a93927f5dd1c245a3592fd8184e84083990a2ad79449f858a12",
+      "legal_hold": false
+    }
+  ]
+}

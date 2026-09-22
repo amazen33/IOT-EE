@@ -8,7 +8,9 @@ Before M2–M3: tenant isolation model; device IDs/protocols; canonical units an
 
 Before M4: UI priorities; identity provider; hierarchy/location rules; report definitions and sanitized expected results; timezone and refill/consumption semantics; accessible design requirements; report approvers.
 
-Before M5–M6: device signing/trust and update capabilities; firmware provenance process; rollback constraints; RPO/RTO; evidence retention/legal holds; WORM provider/region and DR ownership.
+Before M5: device signing/trust and update capabilities; firmware provenance process; rollback constraints (addressed by M5, see docs/firmware.md).
+
+M6 addressed evidence scope, RPO/RTO documentation, and legal-hold enforcement as a provider-neutral contract (see docs/evidence.md and docs/adr/0007-m6-evidence-resilience-dr.md). Still open before a real deployment: WORM provider/region, and DR ownership as an organizational/process assignment.
 
 Before M7–M8: whether monetization is required; certified usage dimensions and closure rules; commercial/currency/tax requirements; selected deployment profiles; on-prem/cloud capacity/network constraints; approved IaC runner/GitOps ownership and budgets.
 
