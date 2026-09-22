@@ -1,0 +1,22 @@
+{
+  "signer_id": "synthetic-signer-001",
+  "signer_key_material": "synthetic-shared-secret-001",
+  "artifacts": [
+    {
+      "artifact_id": "synthetic-firmware-001",
+      "version": "1.2.3",
+      "content_sha256": "5a413f02e1b4993a25a0bb04795d3539ff2e9b1ab17ae7d68607c39618b2933c",
+      "signer_id": "synthetic-signer-001",
+      "build_source_ref": "git:synthetic-commit-abc123",
+      "signature": "7d695edc9baad624b79c68c5dd8df6a3964957db202af8c16ec815b53102137c"
+    },
+    {
+      "artifact_id": "synthetic-firmware-002",
+      "version": "1.3.0",
+      "content_sha256": "bde851412b6b58341d3ba55b5487915b521811d934973d7dc1c9dd4d567aa3f7",
+      "signer_id": "synthetic-signer-001",
+      "build_source_ref": "git:synthetic-commit-def456",
+      "signature": "c93421fa308f0c7753ec7604aa99a8fff53f107daa100048ca5b6cf0f8b766d4"
+    }
+  ]
+}

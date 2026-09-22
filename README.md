@@ -66,4 +66,12 @@ required review checks before collaborative delivery.
   plus an APISIX-shaped route/policy contract. No real APISIX, identity
   provider, SSR renderer, or WebSocket server exists yet — see
   [`docs/gateway.md`](docs/gateway.md) and [`docs/reporting.md`](docs/reporting.md).
-- M5 onward: not started.
+- **M5 — firmware signing/provenance/rollout done, real HSM/transport blocked**:
+  provider-neutral signature verification, firmware artifact provenance
+  (build metadata + hash + signer identity, verified as a unit), and a
+  staged canary-then-broad rollout with automatic rollback to
+  last-known-good on a failed device health check. No real HSM/KMS,
+  device secure-boot chain, build-system provenance verification, or
+  firmware download/flashing transport exists yet — see
+  [`docs/firmware.md`](docs/firmware.md).
+- M6 onward: not started.

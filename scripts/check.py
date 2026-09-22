@@ -104,6 +104,21 @@ def _check_required_artifacts():
         "tests/test_reporting_timezone.py",
         "tests/test_reporting_publication.py",
         "requirements.txt",
+        # M5 (firmware signing/provenance/staged rollout-rollback; see
+        # CLAUDE.md's milestone list and docs/inputs.md's M5-M6 row)
+        "docs/adr/0006-m5-firmware.md",
+        "docs/firmware.md",
+        "firmware/__init__.py",
+        "firmware/signing.py",
+        "firmware/provenance.py",
+        "firmware/rollout.py",
+        "firmware/delivery.py",
+        "deployment/m5-firmware-routes.json",
+        "fixtures/firmware_artifacts.synthetic.json",
+        "tests/test_firmware_signing.py",
+        "tests/test_firmware_provenance.py",
+        "tests/test_firmware_rollout.py",
+        "tests/test_firmware_delivery.py",
     ]
     for name in required:
         if not (ROOT / name).is_file() or not (ROOT / name).stat().st_size:
@@ -209,6 +224,24 @@ def _check_m4_gateway_reporting_policy():
                 raise ValueError("Reporting-telemetry fixture ids must be synthetic")
 
 
+def _check_m5_firmware_policy():
+    # firmware/ is M5's new package: signing verification, provenance,
+    # and rollout/rollback policy. Same no-network/process-import policy
+    # as every prior domain package.
+    _check_no_forbidden_imports("firmware")
+
+    fixture = json.loads((ROOT / "fixtures/firmware_artifacts.synthetic.json").read_text())
+    if not fixture.get("artifacts"):
+        raise ValueError("Synthetic firmware-artifact fixture entries required")
+    for entry in fixture["artifacts"]:
+        if not entry.get("artifact_id", "").startswith("synthetic-"):
+            raise ValueError("Firmware-artifact fixture ids must be synthetic")
+
+    firmware_routes = json.loads((ROOT / "deployment/m5-firmware-routes.json").read_text())
+    if not firmware_routes:
+        raise ValueError("Firmware route config required")
+
+
 def main():
     _check_required_artifacts()
     _check_m0_inert_plan_and_fixtures()
@@ -216,6 +249,7 @@ def main():
     _check_m2_domain_core_policy()
     _check_m3_ingestion_policy()
     _check_m4_gateway_reporting_policy()
+    _check_m5_firmware_policy()
 
     suite = unittest.defaultTestLoader.discover(str(ROOT / "tests"))
     if suite.countTestCases() == 0:
