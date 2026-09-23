@@ -128,12 +128,27 @@ Protobuf-only gives one source of truth serving both transports.
 
 **Envelope shape.** CloudEvents v1.0 semantics, Protobuf binding.
 Top-level fields: `id` (server-issued correlation ID -- see Decision
-5), `source`, `type`, `specversion`, `time`, plus `causation_id` and
-`tenant_id` as top-level extension fields. `data` is a typed Protobuf
-message specific to each event type, versioned independently of the
-envelope itself. The APISIX edge's JSON binding uses the same logical
-envelope -- identical semantics, serialized as JSON rather than binary
-Protobuf at that one boundary.
+5), `source`, `type`, `specversion`, `time`, plus `causation_id`,
+`tenant_id`, and `idempotency_key` as top-level extension fields.
+`data` is a typed Protobuf message specific to each event type,
+versioned independently of the envelope itself. The APISIX edge's JSON
+binding uses the same logical envelope -- identical semantics,
+serialized as JSON rather than binary Protobuf at that one boundary.
+
+**`idempotency_key`.** The constitutional rule requires idempotency
+data preserved end-to-end (ADR 0011 Decision 4), and `id`/`causation_id`
+alone do not supply a dedup key -- `id` identifies *this* envelope
+instance, not a stable identity that survives transport-level retries
+or re-emission. `idempotency_key` fills that gap: for platform-
+originated events, `idempotency_key == id` (the envelope's own identity
+is already stable and unique at creation, so no second value is
+needed). For re-emitted external events -- most concretely a TB CE-
+originated event replayed into the platform -- `idempotency_key` is
+derived from the source system's own unique identifier for that event
+(e.g. TB CE's own event/message ID), not from a freshly generated `id`,
+so that consumers dedup correctly regardless of how many times the
+transport retries delivery or TB CE itself re-emits the same
+underlying occurrence.
 
 **Avro is not the platform envelope format**, and is not deferred as a
 future option for the platform envelope. If a future Python consumer
@@ -142,10 +157,10 @@ storage, that is a decision scoped to that service alone, made behind
 its own port/adapter boundary -- never a platform-wide envelope
 decision. There is no open "Avro for later" question; this is settled.
 
-### 5. Correlation-ID standard: a platform-level `X-Correlation-Id` header/field, distinct from distributed-tracing context
+### 5. Correlation-ID standard: a platform-level `X-Correlation-ID` header/field, distinct from distributed-tracing context
 
 `common/`'s correlation-ID primitive is a single, explicit, server-
-issued identifier (a UUID string) carried as `X-Correlation-Id` over
+issued identifier (a UUID string) carried as `X-Correlation-ID` over
 HTTP/gRPC metadata and as a Kafka message header -- not the message
 payload -- continuing this repository's own M0-M8 precedent
 (`foundation.contracts`' synthetic fixtures already carry a
@@ -153,11 +168,24 @@ payload -- continuing this repository's own M0-M8 precedent
 concern than full distributed tracing (W3C Trace Context's
 `traceparent`, which Micrometer Tracing handles at the observability
 layer feeding Tempo, per ADR 0011's LGTM clarification) -- the two are
-complementary: `X-Correlation-Id` is this platform's own causation/
+complementary: `X-Correlation-ID` is this platform's own causation/
 idempotency identifier (a constitutional requirement, ADR 0011 Decision
-4), while a trace ID is an observability concern. Confirming this
-interoperates with TB CE's own request/event lifecycle is Track A's
-job (Risk 2 below), not decided here.
+4), while a trace ID is an observability concern.
+
+**Origin.** The APISIX edge is where the correlation ID is issued for
+externally-originated requests -- the natural choice, since it is
+already the platform's single ingress point (ADR 0011 Decision 3). If
+an inbound request already carries a client-supplied `X-Correlation-ID`,
+APISIX **overrides** it with a freshly server-issued ID rather than
+honoring the client's value: override is the safer default, since a
+client-supplied ID cannot be trusted for uniqueness or format, and a
+platform-level causation/idempotency identifier (Decision 4's
+`idempotency_key` and `id` fields depend on it) must not inherit an
+untrusted value. This is a stricter rule than distributed tracing
+typically applies to trace IDs, and is deliberate for that reason. How
+a TB CE-originated event (one that never passes through APISIX) gets
+its correlation ID assigned remains open and is Track A's job to
+resolve (Risk 2 below), not decided here.
 
 ### 6. `services/identity`'s first commit IS the walking skeleton (confirmed; no separate stub module)
 
@@ -225,12 +253,16 @@ Track A has no such dependency (it produces a document, touching no
 code paths) and may proceed in parallel with, or ahead of, all three
 steps above.
 
-### 8. Java-only; Python is untouched in M9
+### 8. Java-only; Python is content-untouched in M9
 
-Neither track touches Python code. Track A is a document. Track B is
-Java. `scripts/check.py` continues running and passing on the existing
-Python tree, unmodified in content, exactly as ADR 0011 already
-established.
+Neither track writes or modifies Python code. Track A is a document.
+Track B is Java. Python is **content-untouched**, not
+location-untouched: Decision 7's `spec/` relocation moves every Python
+file's *path* (via `git mv`), but not its contents -- `scripts/check.py`
+continues running and passing at the same test count, on the same
+source, exactly as ADR 0011 already established, whether invoked as
+`python scripts/check.py` (before the move) or
+`python spec/scripts/check.py` (after it).
 
 ## Consequences
 
@@ -264,13 +296,20 @@ established.
    surprise later.
 2. **One ArchUnit rule set tested against exactly one thin slice
    (`services/identity`'s walking-skeleton commit) may not exercise
-   real boundary violations.** A rule that "passes" only because
-   nothing in that first commit could violate it yet is a false
-   confidence signal. Mitigated by Track B's own
-   negative-test requirement (plant a violation, assert the build
-   fails) -- but this only proves the *rule* works, not that the
-   *boundary* will hold once real services with real temptations to
-   cross it exist.
+   real boundary violations -- and the specific rule ADR 0011 Decision
+   3 names (no `services/*` module depends on a vendor SDK directly
+   outside `adapters/*`) is vacuously true in M9, because no
+   `adapters/*` module exists yet for anything to depend on.** The
+   negative test (plant a violation, assert the build fails) proves
+   the *rule fires* on a synthetic violation; it does not prove the
+   *boundary is populated* or that a real service with a real vendor
+   dependency will actually be routed through `adapters/*` once M10+
+   creates the first one. Track B closes this gap either by stating it
+   plainly as an M9 limitation (the rule is proven, the boundary is not
+   yet exercised) or by adding a minimal `adapters/.gitkeep` in M9 so
+   the boundary's shape exists from day one, even with nothing real
+   behind it -- the choice between the two is Track B's own
+   implementation detail, not re-litigated here.
 3. **Maven vs. Gradle was a costly-to-reverse choice once M10+ services
    accumulate.** Maven is now confirmed (Decision 3), which closes this
    risk rather than merely flagging it -- noted here because it was the
@@ -293,8 +332,6 @@ established.
 - Confirmation that `docs/m9-foundation-scope-adr` has been rebased
   onto the real merged `main` and pushed (see Branch base note above)
   -- blocking for Track A/B, independent of this ADR's own agreement.
-- The actual TB CE version to pin (Track A's own first task, not
-  something this ADR can supply).
 - Whether the repository owner wants `docs/tb-ce-inventory.md` (Track
   A's output) reviewed and merged as its own PR before or alongside
   Track B's code, given they are otherwise independent.
