@@ -18,10 +18,14 @@ import org.springframework.web.bind.annotation.RestController;
  * logic (tenant id validation, RBAC lookup, ABAC evaluation) lives in
  * {@code core.TenantPermissionsHandler}, which has no Spring dependency
  * and is tested without one. {@code TenantId.of}'s
- * {@link IllegalArgumentException} for an invalid tenant id propagates
- * out of {@link TenantPermissionsHandler#handle} and is mapped to a 400
- * by Spring's default exception handling -- this controller does not
- * catch it itself.
+ * {@code TenantIdValidationException} for an invalid tenant id
+ * propagates out of {@link TenantPermissionsHandler#handle} uncaught by
+ * this controller -- {@link DomainExceptionAdvice} is what maps it to a
+ * 400 response; Spring's own default exception handling does NOT map a
+ * plain {@link IllegalArgumentException} subtype to 400 on its own
+ * (this class previously claimed otherwise; that claim was wrong -- see
+ * {@code TenantPermissionsControllerTest.nonSyntheticTenantIdIsRejected}
+ * and {@link DomainExceptionAdvice}'s own Javadoc).
  */
 @RestController
 public class TenantPermissionsController {

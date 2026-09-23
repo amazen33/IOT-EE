@@ -32,13 +32,17 @@ public final class TenantId {
     /**
      * Validates and wraps {@code candidate}.
      *
-     * @throws IllegalArgumentException if {@code candidate} is null, blank,
-     *     missing the {@value #SYNTHETIC_PREFIX} prefix, or contains
-     *     characters outside {@code [a-z0-9-]} after the prefix.
+     * @throws TenantIdValidationException if {@code candidate} is null,
+     *     blank, missing the {@value #SYNTHETIC_PREFIX} prefix, or
+     *     contains characters outside {@code [a-z0-9-]} after the prefix.
+     *     A narrow subtype of {@link IllegalArgumentException} (see its
+     *     own Javadoc) so callers can catch exactly this validation
+     *     failure -- {@code services.identity.web.DomainExceptionAdvice}
+     *     is what maps it to an HTTP 400 response.
      */
     public static TenantId of(String candidate) {
         if (candidate == null || !VALID_FORMAT.matcher(candidate).matches()) {
-            throw new IllegalArgumentException(
+            throw new TenantIdValidationException(
                     "tenant_id must match " + VALID_FORMAT.pattern() + " but was: " + candidate);
         }
         return new TenantId(candidate);

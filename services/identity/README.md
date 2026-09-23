@@ -80,7 +80,13 @@ the relocated code:
   translating the HTTP request into a call to
   `TenantPermissionsHandler.handle` and mapping the result onto an HTTP
   response; all real logic lives in `core`. `web.WebMvcConfig` registers
-  this service's own `CorrelationIdHandlerInterceptor`.
+  this service's own `CorrelationIdHandlerInterceptor`. `web.DomainExceptionAdvice`
+  maps `domain.TenantIdValidationException` (a validation failure thrown
+  by `TenantId.of`) to an HTTP 400 with a stable, non-leaking response
+  body -- added after CI caught the exception propagating uncaught as a
+  500 (`TenantPermissionsControllerTest.nonSyntheticTenantIdIsRejected`);
+  see that class's own Javadoc for why the response body deliberately
+  never echoes the exception's message.
 - `rbac/` -- this service's own RBAC primitives (see above). Framework-
   free by design, and now mechanically enforced: new rule
   `identityRbacMustStayFrameworkFree` (no `org.springframework..`),
@@ -132,20 +138,32 @@ package tripwire, are real and enforced today.
 `python spec/scripts/check.py` (the existing Python gate) was run and
 still passes 437/437 with `spec/` untouched by this refactor.
 
-`mvn verify` for this module, `architecture/`, and the retired
-`common`/`adapters/web-spring` modules has **never been run to
-completion** in any environment this work has been prepared in: every
-environment blocks `repo.maven.apache.org` (Maven Central), so `mvn`
-cannot resolve Spring Boot, ArchUnit, `protobuf-maven-plugin`, or any
-other declared dependency. This is documented as **blocked, not
-passed**, per the development contract's own rule for unavailable
-external verification. Because of this, verification here has been
-entirely mechanical -- XML well-formedness, brace/paren balance,
-ASCII-only content, and (specific to this refactor, after a
-previously-undetected defect was found and fixed while rebuilding this
-module's ArchUnit fixtures) a package-declaration-vs-directory-path
-consistency check across every `.java` file in this module and in
-`architecture/`. None of these checks compile the code. Run
-`mvn -f pom.xml verify` from an environment with normal internet access
-(this project's own CI, or a developer machine) before relying on this
-module's Java code compiling or its tests passing.
+`mvn verify` was never run to completion in any environment this code
+was *written* in: every environment used to prepare it (including the
+one used for this note) blocks `repo.maven.apache.org` (Maven Central)
+or lacks `mvn`/`javac` entirely, so verification during authoring has
+always been mechanical only -- XML well-formedness, brace/paren
+balance, ASCII-only content, and a package-declaration-vs-directory-
+path consistency check across every `.java` file in this module and in
+`architecture/` (the last of these caught a real, previously-
+undetected defect in this module's ArchUnit fixture stubs during the
+ADR 0013 refactor -- see git history for `rbac/fixtures/` and
+`core/fixtures/`).
+
+`mvn -f pom.xml verify` HAS since been run for real, in CI (GitHub
+Actions has normal network access and ships Maven -- this repository's
+own build environment was never the constraint, only every environment
+this code was authored in). First real run: `architecture` passed
+(the ArchUnit rules compile and hold); `services/identity` failed 1 of
+66 tests -- `TenantPermissionsControllerTest.nonSyntheticTenantIdIsRejected`,
+because `domain.TenantIdValidationException` (then a bare
+`IllegalArgumentException`) propagated uncaught through
+`DispatcherServlet` as a 500 instead of the 400 the test correctly
+expected. Fixed by adding `web.DomainExceptionAdvice` (see above) and
+narrowing the thrown type from `IllegalArgumentException` to the new
+`TenantIdValidationException`; the test itself was not changed, since
+it was asserting the right behavior. This is the module's first
+compiled-and-executed verification result, superseding the
+mechanical-only checks above as the authoritative signal -- re-run
+`mvn -f pom.xml verify` after any further change and trust that result
+over a mechanical check whenever the two would disagree.

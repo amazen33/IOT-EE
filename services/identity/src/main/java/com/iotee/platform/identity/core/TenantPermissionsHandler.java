@@ -49,9 +49,12 @@ public class TenantPermissionsHandler {
      * @return the tenant id (in its validated, canonical form), the
      *     subject id, and the set of permission names granted to
      *     {@code subjectId} for that tenant.
-     * @throws IllegalArgumentException if {@code rawTenantId} fails
-     *     {@link TenantId#of}'s validation -- the caller (the web layer)
-     *     decides how to map that to a transport-level error.
+     * @throws com.iotee.platform.identity.domain.TenantIdValidationException
+     *     if {@code rawTenantId} fails {@link TenantId#of}'s validation
+     *     (a narrow subtype of {@link IllegalArgumentException}) --
+     *     {@code services.identity.web.DomainExceptionAdvice} is the
+     *     caller (the web layer) that maps it to a transport-level
+     *     error; this class does not catch it itself.
      */
     public TenantPermissionsResult handle(String rawTenantId, String subjectId) {
         TenantId validatedTenantId = TenantId.of(rawTenantId);
