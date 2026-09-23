@@ -246,8 +246,19 @@ def _check_required_artifacts():
         "tests/test_adapters_worm_s3_live.py",
         "tests/test_adapters_worm_s3_fixture.py",
     ]
+    # Since the spec/ relocation (docs/adr/0012-m9-foundation-scope.md
+    # Decision 7), ROOT (this script's own parent's parent) is spec/,
+    # not the repository root -- but docs/, README.md, CLAUDE.md, and
+    # .github/ deliberately stayed at the true repository root (shared
+    # between the Python spec and the Java platform, not Python-specific).
+    # Entries pointing at any of those resolve against ROOT.parent
+    # instead; everything else (the Python packages, scripts/, tests/,
+    # fixtures/, deployment/, requirements*.txt) moved under spec/ along
+    # with this script and resolves against ROOT unchanged.
+    _ROOT_LEVEL_EXACT = {"README.md", "CLAUDE.md", ".github/workflows/ci.yml"}
     for name in required:
-        if not (ROOT / name).is_file() or not (ROOT / name).stat().st_size:
+        base = ROOT.parent if name.startswith("docs/") or name in _ROOT_LEVEL_EXACT else ROOT
+        if not (base / name).is_file() or not (base / name).stat().st_size:
             raise ValueError("Missing required artifact: " + name)
 
 
