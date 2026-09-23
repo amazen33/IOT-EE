@@ -63,17 +63,30 @@ public final class ArchRules {
 
     /**
      * No class residing in {@code packageRoot} may depend on any
-     * package matching {@code "..services.." + sibling + ".."} for any
-     * {@code sibling} in {@code siblingContexts}. The sibling-
-     * bounded-context isolation shape: a service may depend on its own
-     * code and on ordinary third-party libraries, never on another
-     * services/* module's internals.
+     * package under a fully-qualified sibling root in {@code
+     * siblingPackageRoots} (each one is suffixed with {@code ".."}
+     * here, so callers pass the bare package name, e.g. {@code
+     * "com.iotee.platform.billing"}, not a pre-built glob). The
+     * sibling-bounded-context isolation shape: a service may depend on
+     * its own code and on ordinary third-party libraries, never on
+     * another bounded context's internals.
+     *
+     * <p>Callers MUST pass each sibling as this platform's real
+     * top-level package convention ({@code com.iotee.platform.<ctx>}),
+     * not a {@code "..services.."}-shaped guess at where sibling code
+     * might live -- this platform's services do not nest under a
+     * {@code services} package segment at all (see {@code
+     * services/identity}'s own {@code com.iotee.platform.identity}
+     * root), so a rule built from that guess could never match real
+     * sibling code and would only ever "pass" vacuously, independent of
+     * whether the sibling dependency it claims to forbid actually
+     * exists.
      */
     public static ArchRule noClassesDependOnSiblingBoundedContexts(
-            String packageRoot, String because, String... siblingContexts) {
-        String[] forbiddenPackages = new String[siblingContexts.length];
-        for (int i = 0; i < siblingContexts.length; i++) {
-            forbiddenPackages[i] = "..services.." + siblingContexts[i] + "..";
+            String packageRoot, String because, String... siblingPackageRoots) {
+        String[] forbiddenPackages = new String[siblingPackageRoots.length];
+        for (int i = 0; i < siblingPackageRoots.length; i++) {
+            forbiddenPackages[i] = siblingPackageRoots[i] + "..";
         }
         return noClasses()
                 .that().resideInAPackage(packageRoot + "..")
