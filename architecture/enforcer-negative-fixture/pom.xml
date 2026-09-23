@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  S3 negative-test fixture: proves the parent pom's ADR 0013
+  Decision 5.1 Maven Enforcer bannedDependencies rule
+  (enforce-no-shared-runtime) actually fails a build, rather than
+  merely never having fired.
+
+  This is a STANDALONE Maven project, deliberately NOT listed as a
+  <module> of the root reactor pom, and NOT declaring the root pom as
+  its <parent>; either would pull it into every ordinary
+  "mvn -f pom.xml verify" run, which is exactly what this fixture must
+  never do (a negative-test fixture that ships in the same build it is
+  proving something about would itself fail that build, permanently).
+  Instead it copies the SAME bannedDependencies rule text from the root
+  pom.xml verbatim (kept in sync by the comment cross-reference below)
+  and is invoked ONLY by the maven-invoker-plugin execution declared in
+  the root pom's opt-in "enforcerNegativeTest" profile
+  (see that pom's <profiles> section), which runs this fixture as a
+  separate, isolated Maven build and asserts it fails.
+
+  The one dependency below deliberately violates the rule: a
+  compile-scope dependency on a com.iotee.platform:* artifact. It uses
+  <scope>system</scope> with a <systemPath> pointing at the
+  fake-shared-runtime.jar committed alongside this pom (a trivial,
+  otherwise-empty jar; see that file) specifically so this fixture's
+  build never needs to resolve a real com.iotee.platform artifact from
+  any repository; the point of this fixture is to prove the ENFORCER
+  RULE fires on the GAV+scope pattern, not to exercise Maven's ordinary
+  dependency resolution. See verify.groovy for the assertion that the
+  build actually failed for the Enforcer's own stated reason (its
+  custom <message> text, which names ADR 0013), not for some unrelated
+  resolution error.
+-->
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>com.iotee.platform.architecture.fixture</groupId>
+  <artifactId>enforcer-negative-fixture</artifactId>
+  <version>1.0.0</version>
+  <packaging>jar</packaging>
+
+  <properties>
+    <maven.compiler.release>17</maven.compiler.release>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <maven-enforcer-plugin.version>3.5.0</maven-enforcer-plugin.version>
+  </properties>
+
+  <dependencies>
+    <!-- Deliberately banned: a compile/runtime/provided/system-scope
+         dependency on a com.iotee.platform:* artifact. system scope
+         with a local systemPath avoids needing repository resolution
+         (see this file's header comment). -->
+    <dependency>
+      <groupId>com.iotee.platform</groupId>
+      <artifactId>fake-shared-runtime</artifactId>
+      <version>1.0.0</version>
+      <scope>system</scope>
+      <systemPath>${project.basedir}/fake-shared-runtime.jar</systemPath>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <!-- Verbatim copy of the root pom's enforce-no-shared-runtime
+           execution (ADR 0013 Decision 5.1); kept here only so this
+           standalone fixture can be built in isolation without
+           inheriting from the root pom. If the root pom's rule ever
+           changes (denylisted scopes, message text), update both. -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-enforcer-plugin</artifactId>
+        <version>${maven-enforcer-plugin.version}</version>
+        <executions>
+          <execution>
+            <id>enforce-no-shared-runtime</id>
+            <goals>
+              <goal>enforce</goal>
+            </goals>
+            <configuration>
+              <rules>
+                <bannedDependencies>
+                  <excludes>
+                    <exclude>com.iotee.platform:*:*:*:compile</exclude>
+                    <exclude>com.iotee.platform:*:*:*:runtime</exclude>
+                    <exclude>com.iotee.platform:*:*:*:provided</exclude>
+                    <exclude>com.iotee.platform:*:*:*:system</exclude>
+                  </excludes>
+                  <message>
+                    ADR 0013 (microservice autonomy and contract-based
+                    sharing) prohibits any compile-, runtime-, provided-,
+                    or system-scope dependency on another
+                    com.iotee.platform:* artifact. Services share
+                    contract sources (contracts/) and build-time
+                    architecture rules (architecture/, test scope only)
+                    -- never a shared runtime library. If you are trying
+                    to reuse code across services, that code belongs in
+                    each service's own source tree (duplicated, per ADR
+                    0013 Decision 6), not in a new shared module.
+                  </message>
+                </bannedDependencies>
+              </rules>
+              <fail>true</fail>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>
