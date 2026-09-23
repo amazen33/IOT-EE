@@ -5,6 +5,20 @@ spring:
 server:
   port: 8081
 
+iotee:
+  identity:
+    correlation:
+      # S4: whether this service is itself the platform's trust boundary
+      # for the X-Correlation-ID header (ADR 0012 Decision 5). true (the
+      # default) is correct today, with no APISIX gateway in front of this
+      # service -- every inbound request always gets a freshly minted ID,
+      # any inbound header is discarded. Set to false once APISIX (or an
+      # equivalent gateway) sits in front of this service and becomes the
+      # real trust boundary, so this service instead propagates the
+      # gateway-issued ID from the inbound header. See
+      # CorrelationIdHandlerInterceptor's Javadoc.
+      trust-boundary: true
+
 # NOTE: this application.yml is what Spring Boot itself reads at startup.
 # It is intentionally NOT the same file as contracts/cfg/cfg.schema.json
 # validates -- that draft schema targets a separate, this-platform-specific
