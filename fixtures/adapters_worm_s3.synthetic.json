@@ -1,0 +1,25 @@
+{
+  "config_env_vars": {
+    "bucket": "WORM_S3_BUCKET",
+    "endpoint_url": "WORM_S3_ENDPOINT_URL",
+    "region": "WORM_S3_REGION"
+  },
+  "records": [
+    {
+      "record_id": "synthetic-worm-s3-record-001",
+      "tenant_id": "synthetic-tenant-a",
+      "category": "rbac_decision",
+      "occurred_at": "2026-01-01T00:00:00Z",
+      "payload": {"decision": "granted", "permission": "deployment.approve_plan"},
+      "retention_until": "2026-01-01T00:00:01Z"
+    },
+    {
+      "record_id": "synthetic-worm-s3-record-002",
+      "tenant_id": "synthetic-tenant-b",
+      "category": "firmware_rollout_event",
+      "occurred_at": "2026-01-02T00:00:00Z",
+      "payload": {"stage": "rollout_started"},
+      "retention_until": "2026-01-02T00:00:01Z"
+    }
+  ]
+}

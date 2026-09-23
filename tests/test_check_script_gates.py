@@ -90,5 +90,88 @@ class NoForbiddenImportsGateTests(unittest.TestCase):
                 check._check_no_forbidden_imports("firmware")
 
 
+class AdaptersIsolationGateTests(unittest.TestCase):
+    def test_passes_on_the_current_codebase(self):
+        check._check_adapters_isolation()
+
+    def test_raises_when_a_core_package_imports_adapters(self):
+        with _PlantedImportFixture("evidence", "import adapters"):
+            with self.assertRaises(ValueError):
+                check._check_adapters_isolation()
+        check._check_adapters_isolation()
+
+    def test_raises_when_worm_s3_imports_billing(self):
+        with _PlantedImportFixture("adapters/worm_s3", "import billing"):
+            with self.assertRaises(ValueError):
+                check._check_adapters_isolation()
+
+    def test_raises_for_a_from_import_form_too(self):
+        with _PlantedImportFixture("adapters/worm_s3", "from deployment_studio import plan"):
+            with self.assertRaises(ValueError):
+                check._check_adapters_isolation()
+
+
+class Boto3ConfinedToAdaptersGateTests(unittest.TestCase):
+    def test_passes_on_the_current_codebase(self):
+        check._check_boto3_confined_to_adapters()
+
+    def test_raises_when_a_core_package_imports_boto3(self):
+        with _PlantedImportFixture("domain_core", "import boto3"):
+            with self.assertRaises(ValueError):
+                check._check_boto3_confined_to_adapters()
+
+    def test_raises_when_a_test_module_imports_botocore(self):
+        with _PlantedImportFixture("tests", "import botocore"):
+            with self.assertRaises(ValueError):
+                check._check_boto3_confined_to_adapters()
+
+
+class Boto3LazyImportGateTests(unittest.TestCase):
+    def test_passes_on_the_current_codebase(self):
+        check._check_boto3_imported_lazily()
+
+    def test_raises_on_a_module_scope_boto3_import(self):
+        target = check.ROOT / "adapters" / "worm_s3" / "_gate_test_eager_import.py"
+        target.write_text("import boto3\n")
+        try:
+            with self.assertRaises(ValueError):
+                check._check_boto3_imported_lazily()
+        finally:
+            target.unlink()
+
+    def test_does_not_raise_when_boto3_import_is_inside_a_function(self):
+        target = check.ROOT / "adapters" / "worm_s3" / "_gate_test_lazy_import.py"
+        target.write_text("def f():\n    import boto3\n    return boto3\n")
+        try:
+            check._check_boto3_imported_lazily()  # must not raise
+        finally:
+            target.unlink()
+
+
+class AdaptersImportAllowlistGateTests(unittest.TestCase):
+    def test_passes_on_the_current_codebase(self):
+        check._check_import_allowlist("adapters/worm_s3", check._ADAPTERS_WORM_S3_IMPORT_ALLOWLIST)
+
+    def test_raises_on_an_unlisted_import(self):
+        with _PlantedImportFixture("adapters/worm_s3", "import socket"):
+            with self.assertRaises(ValueError):
+                check._check_import_allowlist("adapters/worm_s3", check._ADAPTERS_WORM_S3_IMPORT_ALLOWLIST)
+
+
+class RequirementsTxtNoBoto3GateTests(unittest.TestCase):
+    def test_passes_on_the_current_codebase(self):
+        check._check_requirements_txt_has_no_boto3()
+
+    def test_raises_if_boto3_added_to_requirements_txt(self):
+        req_path = check.ROOT / "requirements.txt"
+        original = req_path.read_text()
+        req_path.write_text(original + "\nboto3>=1.34.0\n")
+        try:
+            with self.assertRaises(ValueError):
+                check._check_requirements_txt_has_no_boto3()
+        finally:
+            req_path.write_text(original)
+
+
 if __name__ == "__main__":
     unittest.main()
