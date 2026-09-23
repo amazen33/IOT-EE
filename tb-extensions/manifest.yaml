@@ -1,0 +1,83 @@
+# tb-extensions/manifest.yaml -- draft, Track A (ADR 0012 Decision 3)
+#
+# First version of the declarative TB CE customization surface named in
+# ADR 0011 Decision 8. This file is a plan, not a build artifact: no
+# tooling reads it yet, and nothing listed under custom_rule_nodes or
+# custom_integrations below has actually been implemented. It exists so
+# that, from day one, every TB CE customization this platform ever adds
+# is recorded in one place instead of scattered across ad hoc code and
+# tribal knowledge -- the whole point of ADR 0011's "minimal, deliberate
+# customization set" upgrade philosophy.
+#
+# Track A produced this as a document-only deliverable (ADR 0012
+# Decision 1): it is intentionally thin. Track B and M10+ extend it as
+# real custom rule nodes, integrations, and configuration dependencies
+# are actually built -- this file is expected to grow, and every entry
+# added later should cite the PR/commit that implemented it, the same
+# way this draft cites the ADRs that authorized it.
+
+pinned_version:
+  edition: community
+  target: "4.3.1.x"
+  # Pin to the patch line, not one exact build (see
+  # docs/tb-ce-inventory.md Section 1): re-pinning to the latest
+  # 4.3.1.x patch is a routine, low-friction bump; a minor-version
+  # bump (4.3 -> 4.4+) is a deliberate, separately-reviewed decision.
+  pinned_at: "4.3.1.5"
+  pinned_at_date: "2026-09-14"
+  legacy_version: null # unknown -- see docs/tb-ce-inventory.md Section 1 and Section 5
+
+custom_rule_nodes:
+  # No custom TbNode implementations exist yet. Track A investigated
+  # the TbNode/@RuleNode extension surface (docs/tb-ce-inventory.md
+  # Section 2.1) but implemented nothing against it -- that is
+  # explicitly out of Track A's scope (ADR 0012 Non-goals) and belongs
+  # to a future milestone once a real need for a custom rule node is
+  # identified.
+  []
+
+custom_integrations:
+  # None planned. docs/tb-ce-inventory.md Section 2.2 found that
+  # AbstractIntegration (custom/remote integrations over gRPC) is a
+  # ThingsBoard Professional/Cloud-only feature, not available in CE.
+  # Since this platform commits to TB CE specifically (ADR 0011
+  # Decision 1), any external-system connector this platform needs is
+  # built as an external Java service talking to TB CE's REST API
+  # and/or transport layer (ADR 0011 Decision 3's "prefer external
+  # Java services over in-TB modifications"), never as a TB-CE-hosted
+  # AbstractIntegration. This section stays empty by design, not by
+  # omission.
+  []
+
+tb_ce_configuration_dependencies:
+  # TB CE configuration this platform's own code assumes or depends on.
+  # Draft only -- Track B has not yet been built, so nothing here is
+  # exercised by real code.
+  queue:
+    type: kafka # TB_QUEUE_TYPE=kafka; required for cluster mode (in-memory queue is unsupported there)
+    note: >-
+      TB CE's own internal Kafka topics (tb_core, tb_rule_engine,
+      tb_transport.api.*) are TB CE's internal wire format
+      (TransportProtos.proto, Protobuf) and are not consumed directly
+      by this platform's own services -- see
+      docs/tb-ce-inventory.md Section 2.4. Any bridge between TB CE's
+      internal bus and this platform's own event/command envelope
+      (ADR 0012 Decision 4) happens at an explicit boundary service,
+      never by importing TB CE's internal .proto definitions.
+  rest_api:
+    auth: api_key # X-Authorization: ApiKey <key>, recommended since v4.3 for service accounts (see Section 2.3)
+    auth_fallback: jwt # X-Authorization: Bearer <token>, login/refresh cycle -- not the default assumption for service-to-service calls
+  extensions_enabled: [] # no TbNode/AbstractIntegration extensions to enable yet
+
+version_pinning_strategy:
+  patch_line: "4.3.1.x"
+  policy: >-
+    Track the latest patch within the pinned minor line
+    (currently 4.3.1.x) as a routine bump, applied and verified against
+    docs/tb-ce-inventory.md's own gate whenever a new patch is adopted.
+    A minor-version change (e.g. to 4.4.x) requires updating this
+    manifest, re-running Track A's own investigation for anything that
+    changed (extension API surface, REST API auth model, queue topic
+    names/shapes), and a fresh review -- it is never a routine bump.
+  last_reviewed: "2026-09-23"
+  reviewed_against: "docs/tb-ce-inventory.md"
