@@ -3,6 +3,7 @@ package com.iotee.platform.identity.correlation;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.MDC;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.lang.NonNull;
 import org.springframework.web.servlet.HandlerInterceptor;
 
@@ -23,22 +24,38 @@ import org.springframework.web.servlet.HandlerInterceptor;
  * same wiring authors its own copy of this class and its own
  * {@code WebMvcConfigurer}, per ADR 0013 Decision 6.
  *
- * <p>Same trust-boundary rule as {@link CorrelationIdContext}'s Javadoc:
- * any inbound {@value CorrelationIdConstants#HTTP_HEADER} header is
- * discarded, never honored, and a fresh ID is always minted, because
- * APISIX is the platform's edge and every services/* module sits behind
- * it. Deliberately NOT the W3C {@code traceparent} header or its
- * semantics -- {@code X-Correlation-ID} is this platform's own, simpler,
- * business-level correlation identifier, tracked independently of
- * whatever distributed-tracing propagation (if any) also runs alongside
- * it.
+ * <p><b>Trust boundary is configurable</b> (S4 fix): whether this
+ * service treats every inbound HTTP request as arriving from OUTSIDE
+ * the platform's trust zone, and therefore always mints a fresh
+ * correlation ID, discarding any inbound
+ * {@value CorrelationIdConstants#HTTP_HEADER} header, per {@link
+ * CorrelationIdContext}'s origin/override rule, is controlled by the
+ * {@code iotee.identity.correlation.trust-boundary} property, defaulting
+ * to {@code true}. That default is correct TODAY, before APISIX exists:
+ * with no gateway in front of it, every request this service receives
+ * is, in effect, arriving at the edge. It stops being correct the day
+ * APISIX (or an equivalent gateway) is deployed in front of this
+ * service and becomes the actual trust boundary that mints and
+ * overrides the ID; at that point this property should be set to
+ * {@code false} in this service's own deployment configuration, so it
+ * instead PROPAGATES the gateway-issued ID from the inbound header (see
+ * {@link #preHandle}) rather than discarding it and minting a second,
+ * different one, which would silently break end-to-end correlation the
+ * moment a real edge is introduced. This class cannot know when that
+ * day arrives; only deployment configuration can say so, which is
+ * exactly why this was made a property instead of staying hardcoded
+ * {@code true}.
  */
 public class CorrelationIdHandlerInterceptor implements HandlerInterceptor {
+
+    @Value("${iotee.identity.correlation.trust-boundary:true}")
+    private boolean trustBoundary = true;
 
     @Override
     public boolean preHandle(@NonNull HttpServletRequest request, @NonNull HttpServletResponse response,
             @NonNull Object handler) {
-        String correlationId = CorrelationIdContext.adoptOrOrigin(null, true);
+        String inboundValue = trustBoundary ? null : request.getHeader(CorrelationIdConstants.HTTP_HEADER);
+        String correlationId = CorrelationIdContext.adoptOrOrigin(inboundValue, trustBoundary);
         CorrelationIdContext.set(correlationId);
         MDC.put(CorrelationIdConstants.MDC_KEY, correlationId);
         response.setHeader(CorrelationIdConstants.HTTP_HEADER, correlationId);

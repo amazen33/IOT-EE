@@ -167,3 +167,22 @@ compiled-and-executed verification result, superseding the
 mechanical-only checks above as the authoritative signal -- re-run
 `mvn -f pom.xml verify` after any further change and trust that result
 over a mechanical check whenever the two would disagree.
+
+The fix above (`DomainExceptionAdvice` + `TenantIdValidationException`)
+was pushed and re-verified: CI run #84 on `feature/track-b-java-
+bootstrap` (triggered by commit `2a98d87`, "ci: re-trigger after
+641ec96") passed both jobs green -- `foundation` (Python gate,
+437/437) and `java-platform-bootstrap` (`mvn -B -f pom.xml verify`,
+`architecture` + `services/identity`, all 66 tests). PR #14 merged
+that state to `main` at `2cc6e0a`, tagged `v1.0.0` (I3: this paragraph
+is the verification-log entry this file was missing at merge time).
+
+Everything added to `services/identity` and `architecture` SINCE that
+merge (the M9 conformance-review follow-up commits on this branch --
+B-1's reintroduced vendor-SDK/persistence-provider rules, S1/S2/S6's
+scan and package-matcher fixes, S4/S5's correlation trust-boundary
+config and dead-filter removal) is, once again, verified only
+mechanically in this same authoring environment (no `mvn`, no Maven
+Central access) -- not yet by a real `mvn -f pom.xml verify` run. A
+fresh CI run against this branch is required before treating any of
+those items as closed, exactly as it was before CI run #84 existed.

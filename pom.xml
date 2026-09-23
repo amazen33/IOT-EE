@@ -44,6 +44,7 @@
     <cloudevents.version>3.0.0</cloudevents.version>
     <junit.version>5.10.3</junit.version>
     <maven-enforcer-plugin.version>3.5.0</maven-enforcer-plugin.version>
+    <maven-invoker-plugin.version>3.7.0</maven-invoker-plugin.version>
   </properties>
 
   <dependencyManagement>
@@ -164,8 +165,8 @@
     </pluginManagement>
     <plugins>
       <!-- ADR 0013 Decision 5.1 + Decision 8: mechanical, platform-wide
-           enforcement that no module ever declares a compile- or
-           runtime-scope dependency on another com.iotee.platform:*
+           enforcement that no module ever declares a compile-,
+           runtime-, provided-, or system-scope dependency on another com.iotee.platform:*
            artifact. This is what makes "no shared runtime module" a
            build failure, not a convention ; it applies to every module
            via plugin inheritance (declared directly under <plugins>, not
@@ -194,18 +195,20 @@
                   <excludes>
                     <exclude>com.iotee.platform:*:*:*:compile</exclude>
                     <exclude>com.iotee.platform:*:*:*:runtime</exclude>
+                    <exclude>com.iotee.platform:*:*:*:provided</exclude>
+                    <exclude>com.iotee.platform:*:*:*:system</exclude>
                   </excludes>
                   <message>
                     ADR 0013 (microservice autonomy and contract-based
-                    sharing) prohibits any compile- or runtime-scope
-                    dependency on another com.iotee.platform:* artifact.
-                    Services share contract sources (contracts/) and
-                    build-time architecture rules (architecture/, test
-                    scope only) -- never a shared runtime library. If you
-                    are trying to reuse code across services, that code
-                    belongs in each service's own source tree
-                    (duplicated, per ADR 0013 Decision 6), not in a new
-                    shared module.
+                    sharing) prohibits any compile-, runtime-, provided-,
+                    or system-scope dependency on another
+                    com.iotee.platform:* artifact. Services share
+                    contract sources (contracts/) and build-time
+                    architecture rules (architecture/, test scope only)
+                    -- never a shared runtime library. If you are trying
+                    to reuse code across services, that code belongs in
+                    each service's own source tree (duplicated, per ADR
+                    0013 Decision 6), not in a new shared module.
                   </message>
                 </bannedDependencies>
               </rules>
@@ -216,4 +219,59 @@
       </plugin>
     </plugins>
   </build>
+
+  <!-- S3: opt-in negative test proving the enforce-no-shared-runtime
+       Enforcer rule above actually fails a build, not merely that it
+       has never fired. NOT active by default; it runs a nested,
+       standalone Maven build (architecture/enforcer-negative-fixture/)
+       via maven-invoker-plugin, which needs network access to resolve
+       its own dependencies the first time it runs in an environment
+       without it cached, and a negative test that runs on every
+       ordinary "mvn verify" would also slow down and complicate the
+       default build for something that, by construction, only needs
+       re-proving when the Enforcer rule's own configuration changes.
+       Run explicitly with:
+         mvn -f pom.xml verify -PenforcerNegativeTest
+       CI (or a human reviewer) should run this at least once to close
+       S3 before treating the Enforcer rule as proven, not merely
+       configured; see architecture/enforcer-negative-fixture/pom.xml
+       and verify.groovy for what it actually asserts. -->
+  <profiles>
+    <profile>
+      <id>enforcerNegativeTest</id>
+      <activation>
+        <property>
+          <name>enforcerNegativeTest</name>
+        </property>
+      </activation>
+      <build>
+        <plugins>
+          <plugin>
+            <groupId>org.apache.maven.plugins</groupId>
+            <artifactId>maven-invoker-plugin</artifactId>
+            <version>${maven-invoker-plugin.version}</version>
+            <configuration>
+              <projectsDirectory>architecture</projectsDirectory>
+              <cloneProjectsTo>${project.build.directory}/enforcer-negative-fixture-it</cloneProjectsTo>
+              <pomIncludes>
+                <pomInclude>enforcer-negative-fixture/pom.xml</pomInclude>
+              </pomIncludes>
+              <streamLogsOnFailures>true</streamLogsOnFailures>
+              <postBuildHookScript>verify</postBuildHookScript>
+            </configuration>
+            <executions>
+              <execution>
+                <id>run-enforcer-negative-fixture</id>
+                <phase>verify</phase>
+                <goals>
+                  <goal>install</goal>
+                  <goal>run</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 </project>

@@ -1,16 +1,19 @@
 package com.iotee.platform.identity.correlation;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.MDC;
+import org.springframework.test.util.ReflectionTestUtils;
 
 class CorrelationIdHandlerInterceptorTest {
 
@@ -71,6 +74,58 @@ class CorrelationIdHandlerInterceptorTest {
 
         assertNull(CorrelationIdContext.get());
         assertNull(MDC.get(CorrelationIdConstants.MDC_KEY));
+    }
+
+    @Test
+    void preHandleStillOverridesAnInboundHeaderValueWhenTrustBoundaryDefaultsTrue() {
+        // S4: trustBoundary defaults to true (the field initializer),
+        // exactly like the previously-hardcoded behavior this test
+        // predates -- this is the regression guard for that default.
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        when(request.getHeader(CorrelationIdConstants.HTTP_HEADER)).thenReturn("client-supplied-value");
+        HttpServletResponse response = mock(HttpServletResponse.class);
+
+        interceptor.preHandle(request, response, new Object());
+
+        String bound = CorrelationIdContext.get();
+        assertNotEquals("client-supplied-value", bound,
+                "trustBoundary=true (the default) must still discard an inbound header value");
+    }
+
+    @Test
+    void preHandlePropagatesAnInboundHeaderValueWhenTrustBoundaryIsFalse() {
+        // S4: once this service sits behind a real edge (APISIX or
+        // equivalent) and iotee.identity.correlation.trust-boundary is
+        // set to false, an inbound header value must be PROPAGATED, not
+        // discarded -- otherwise setting the property to false would
+        // silently do nothing and end-to-end correlation would still
+        // break the moment a real edge exists.
+        ReflectionTestUtils.setField(interceptor, "trustBoundary", false);
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        when(request.getHeader(CorrelationIdConstants.HTTP_HEADER)).thenReturn("upstream-issued-value");
+        HttpServletResponse response = mock(HttpServletResponse.class);
+
+        interceptor.preHandle(request, response, new Object());
+
+        assertEquals("upstream-issued-value", CorrelationIdContext.get(),
+                "trustBoundary=false must propagate the inbound header value rather than minting a new one");
+        verify(response).setHeader(CorrelationIdConstants.HTTP_HEADER, "upstream-issued-value");
+    }
+
+    @Test
+    void preHandleStillMintsAFreshIdWhenTrustBoundaryIsFalseButNoHeaderIsPresent() {
+        // trustBoundary=false must not fail merely because no upstream
+        // hop supplied a value (CorrelationIdContext.adoptOrOrigin falls
+        // back to origin() for a blank/absent inboundValue regardless of
+        // isTrustBoundary).
+        ReflectionTestUtils.setField(interceptor, "trustBoundary", false);
+        HttpServletRequest request = mock(HttpServletRequest.class);
+        when(request.getHeader(CorrelationIdConstants.HTTP_HEADER)).thenReturn(null);
+        HttpServletResponse response = mock(HttpServletResponse.class);
+
+        interceptor.preHandle(request, response, new Object());
+
+        assertNotEquals(null, CorrelationIdContext.get());
     }
 
     @Test

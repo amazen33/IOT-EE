@@ -45,27 +45,36 @@ M9 is in progress. Track A merged; Track B refactor against ADR 0013 pending.
 Post-v1.0.0 work is scoped milestone-by-milestone. There is no M9+ roadmap yet — it is defined when the prior milestone closes.
 
 ## Repository layout
-text
+
+```
 contracts/                  language-neutral contracts (.proto, OpenAPI, JSON Schema)
-architecture/               ArchUnit rules, test scope only (build-time shared artifact)
+architecture/               ArchUnit rule factories, test scope only (build-time shared artifact)
 services/<name>/            autonomous Java services
-  └─ core/                  framework-free domain (no Spring, no JPA, no HTTP)
-  └─ web/                   thin Spring adapter delegating to core
-adapters/<provider>/        real-backend implementations behind contracts
+  └─ domain/                 framework-free domain model (no Spring, no JPA, no HTTP)
+  └─ core/                   framework-free handler/use-case logic, calls domain/
+  └─ rbac/                   framework-free authorization primitives (roles, permissions, ABAC)
+  └─ correlation/            correlation-ID primitives + this service's own Spring adapters for them
+  └─ web/                    thin Spring adapter delegating to core/
+adapters/<provider>/        real-backend implementations behind contracts (M10+; none exist in Java yet)
   └─ (e.g. worm_s3)         built from spec/ patterns; isolated, optional deps
 deploy/                     Ansible, Terraform/OpenTofu, Helm, Argo CD
 spec/                       frozen M0–M8 Python reference implementation (not the platform)
 docs/                       ADRs, architecture guides, inventories
   └─ adr/                   numbered ADRs (0001–present) + README.md convention
 .github/workflows/          CI: python spec gate + java platform gate
+```
+
 docs/, CLAUDE.md, README.md, .github/workflows/ stay at the repository root — they describe the project as a whole, not any single language tree.
 
 ## Gates
+
 Both gates run in CI on every change. Both must pass for changes touching their scope.
 
-Gate	Command	Scope
-Python spec gate	python spec/scripts/check.py	The frozen M0–M8 reference implementation only. Mechanical isolation checks + full regression suite.
-Java platform gate	mvn -f pom.xml verify	contracts/, architecture/, services/*, adapters/*. Compile + unit tests + ArchUnit boundary rules.
+| Gate | Command | Scope |
+| --- | --- | --- |
+| Python spec gate | `python spec/scripts/check.py` | The frozen M0–M8 reference implementation only. Mechanical isolation checks + full regression suite. |
+| Java platform gate | `mvn -f pom.xml verify` | contracts/, architecture/, services/*, adapters/*. Compile + unit tests + ArchUnit boundary rules. |
+
 After every stage run its complete relevant gate and the full regression gate. A stage requires code, tests, docs, deployment artifacts, and passing gates; document unavailable external verification as blocked, not passed.
 
 ## Architectural principles
@@ -77,9 +86,9 @@ Contracts over libraries — communication relies on versioned schemas (Protobuf
 Standard format libraries allowed — Jackson, protobuf-java, CloudEvents SDK, etc. are ordinary per-service third-party dependencies. Do not hand-roll a serializer to "purify" a service.
 
 ### Hexagonal architecture
-Pure domain core — business rules live in a framework-free layer. No org.springframework.., jakarta.servlet.., jakarta.ws.rs.. imports in core/.
+Pure domain core — business rules live in a framework-free layer. No org.springframework.., jakarta.servlet.., jakarta.ws.rs.. imports in domain/, core/, or rbac/ (each has its own ArchUnit rule).
 
-Database independence — the domain knows nothing about PostgreSQL, JPA, or SQL. Persistence via repository interfaces (ports); implemented by infrastructure adapters. jakarta.persistence.. annotations permitted; org.hibernate.. prohibited outside the persistence adapter module.
+Database independence — the domain knows nothing about PostgreSQL, JPA, or SQL. Persistence via repository interfaces (ports); implemented by infrastructure adapters. jakarta.persistence.. annotations permitted; org.hibernate.., org.eclipse.persistence.., and org.jooq.. are denied by ArchUnit rule (no persistence code exists yet, so this rule is currently vacuously satisfied, not exercised against real persistence code).
 
 Protocol independence — REST, gRPC, and Kafka are driving/driven adapters. Incoming requests translate to plain Java commands before hitting the domain; domain events translate to Kafka messages at the outer edge.
 
