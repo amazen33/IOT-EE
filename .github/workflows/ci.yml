@@ -1,4 +1,4 @@
-name: M0 foundation gate
+name: "Platform gates: Python spec + Java platform"
 on: [push, pull_request]
 permissions:
   contents: read
