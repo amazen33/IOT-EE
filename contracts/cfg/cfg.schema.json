@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://iotee.example/schema/contracts/cfg/cfg.schema.json",
+  "title": "IOT-EE platform service configuration (draft)",
+  "description": "Draft JSON Schema for a services/* module's cfg.yaml (ADR 0012 Decision 3). Lives under contracts/ (ADR 0013): a shared contract artifact, source only -- every service validates its own cfg.yaml against this same file directly, never through a shared runtime library. Intentionally minimal: only the fields every service is already expected to have (tenant scoping mode and a correlation-id policy toggle). NOT the final schema -- see the Non-goals note in services/identity/README.md. Extend this file, in its own reviewed change, as real configuration surface is added.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["service_name", "tenant_mode"],
+  "properties": {
+    "service_name": {
+      "type": "string",
+      "description": "Matches this service's Maven artifactId, e.g. \"iotee-service-identity\".",
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "tenant_mode": {
+      "type": "string",
+      "description": "How this service scopes data by tenant. \"schema-per-tenant\" matches the PostgreSQL multi-tenant-by-schema architecture; \"shared-schema\" is reserved for a future service that has an explicit, reviewed reason to differ.",
+      "enum": ["schema-per-tenant", "shared-schema"]
+    },
+    "correlation_id": {
+      "type": "object",
+      "description": "Optional overrides for the default X-Correlation-ID behavior (ADR 0012 Decision 5). Omit entirely to accept the default: this service treats every inbound request as a trust boundary and always mints a fresh ID.",
+      "additionalProperties": false,
+      "properties": {
+        "trust_boundary": {
+          "type": "boolean",
+          "description": "Defaults to true. Set to false ONLY for a service with no APISIX edge in front of it that must propagate an upstream-platform-internal correlation ID instead of minting a new one -- see each service's own CorrelationIdContext Javadoc for why this is not the default."
+        }
+      }
+    }
+  }
+}

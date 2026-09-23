@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>com.iotee.platform</groupId>
+    <artifactId>iotee-platform-parent</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <relativePath>../pom.xml</relativePath>
+  </parent>
+
+  <artifactId>iotee-architecture</artifactId>
+  <packaging>jar</packaging>
+  <name>IOT-EE Platform :: architecture</name>
+  <description>
+    Shared ArchUnit rule DEFINITIONS only (ADR 0013 Decision 8): reusable
+    ArchRule factory methods and import-scoping helpers that every
+    services/* module's own architecture test calls with its own package
+    roots and its own local negative-test fixtures. This module contains
+    no business logic, no domain classes, no Spring components, and no
+    helper implementation that runs at application runtime -- everything
+    here executes only during `mvn test`/`mvn verify`, never inside a
+    running service.
+
+    CONSUMED AT TEST SCOPE ONLY. This is the one artifact ADR 0013
+    permits any services/* or adapters/* module to depend on, and only
+    because it never ships in a runtime artifact. The parent pom's
+    enforce-no-shared-runtime Maven Enforcer rule bans a compile- or
+    runtime-scope dependency on this artifact (or any other
+    com.iotee.platform:* artifact) -- a consumer must declare
+    &lt;scope&gt;test&lt;/scope&gt; explicitly, exactly the way
+    services/identity/pom.xml does.
+
+    This module has no ArchUnit rules of its own (there is no business
+    logic here to check boundaries on) and depends only on ArchUnit and
+    JUnit -- both ordinary third-party testing libraries, not
+    project-authored runtime code, per ADR 0013 Decision 2.
+  </description>
+
+  <dependencies>
+    <dependency>
+      <groupId>com.tngtech.archunit</groupId>
+      <artifactId>archunit-junit5</artifactId>
+      <scope>compile</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter-api</artifactId>
+      <scope>compile</scope>
+    </dependency>
+  </dependencies>
+</project>

@@ -1,0 +1,5 @@
+# Synthetic fixture, deliberately invalid: tenant_mode is not one of the
+# schema's enum values, and service_name violates the lowercase-kebab
+# pattern.
+service_name: Iotee_Service_Identity
+tenant_mode: single-tenant-mode-that-does-not-exist

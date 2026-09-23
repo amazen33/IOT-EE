@@ -1,0 +1,13 @@
+spring:
+  application:
+    name: iotee-service-identity
+
+server:
+  port: 8081
+
+# NOTE: this application.yml is what Spring Boot itself reads at startup.
+# It is intentionally NOT the same file as contracts/cfg/cfg.schema.json
+# validates -- that draft schema targets a separate, this-platform-specific
+# cfg.yaml surface (ADR 0012 Decision 3) that no code reads yet in this
+# walking skeleton. Reconciling the two (or deciding they stay separate) is
+# explicit future work, not settled by this commit.

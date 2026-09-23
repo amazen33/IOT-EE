@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>com.iotee.platform</groupId>
+    <artifactId>iotee-platform-parent</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <relativePath>../../pom.xml</relativePath>
+  </parent>
+
+  <artifactId>iotee-service-identity</artifactId>
+  <packaging>jar</packaging>
+  <name>IOT-EE Platform :: services :: identity</name>
+  <description>
+    Walking skeleton (ADR 0012 Decision 6), rebuilt per ADR 0013
+    (microservice autonomy and contract-based sharing) after that ADR
+    retired Track B's first attempt's common/ and adapters/web-spring/
+    shared runtime modules. This service now owns everything it needs
+    directly: RBAC/ABAC primitives (rbac/), correlation-ID context and
+    Spring wiring (correlation/), and its own generated Envelope classes
+    (compiled from contracts/events/v1/envelope.proto by this pom's own
+    protobuf-maven-plugin configuration, below -- not inherited from any
+    shared jar). core/ holds the framework-free endpoint logic
+    (TenantPermissionsHandler); web/ is the thin Spring adapter that
+    calls it. See README.md in this module for exactly what this first
+    commit does and does not do, and see the root pom.xml's
+    enforce-no-shared-runtime Enforcer rule for the mechanical guarantee
+    that this module (or any future services/* module) cannot silently
+    reintroduce a dependency on a shared runtime artifact.
+  </description>
+
+  <dependencies>
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-web</artifactId>
+    </dependency>
+
+    <!-- Protobuf/CloudEvents runtime for this service's OWN generated
+         Envelope classes (see the protobuf-maven-plugin configuration
+         below) ; an ordinary third-party dependency, per ADR 0013
+         Decision 2, not a project-authored shared library. -->
+    <dependency>
+      <groupId>com.google.protobuf</groupId>
+      <artifactId>protobuf-java</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.cloudevents</groupId>
+      <artifactId>cloudevents-protobuf</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>io.cloudevents</groupId>
+      <artifactId>cloudevents-core</artifactId>
+    </dependency>
+
+    <!-- cfg.yaml validation against contracts/cfg/cfg.schema.json (ADR
+         0012 Decision 3) ; this service validates its own
+         configuration directly against the shared contract file; no
+         shared validation library is involved. -->
+    <dependency>
+      <groupId>com.networknt</groupId>
+      <artifactId>json-schema-validator</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.fasterxml.jackson.core</groupId>
+      <artifactId>jackson-databind</artifactId>
+    </dependency>
+    <dependency>
+      <groupId>com.fasterxml.jackson.dataformat</groupId>
+      <artifactId>jackson-dataformat-yaml</artifactId>
+    </dependency>
+
+    <dependency>
+      <groupId>org.slf4j</groupId>
+      <artifactId>slf4j-api</artifactId>
+    </dependency>
+
+    <!-- ADR 0013 Decision 8: the one intra-repo artifact this service
+         may depend on, and only at test scope. Provides this service's
+         own architecture test with reusable ArchRule factories; this
+         service's own fixtures and test methods still live here, in
+         its own test tree. -->
+    <dependency>
+      <groupId>com.iotee.platform</groupId>
+      <artifactId>iotee-architecture</artifactId>
+      <scope>test</scope>
+    </dependency>
+
+    <dependency>
+      <groupId>org.springframework.boot</groupId>
+      <artifactId>spring-boot-starter-test</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.mockito</groupId>
+      <artifactId>mockito-core</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <!-- SLF4J provider for tests only. Without one on the classpath,
+           org.slf4j.MDC is backed by the NOP logger and MDC.get(...)
+           always returns null regardless of what MDC.put(...) stored;
+           see CorrelationIdHandlerInterceptorTest's
+           preHandleBindsToMdcSoLogLinesCarryTheCorrelationId, which
+           asserts the real MDC binding, not just the interceptor's own
+           bookkeeping. Logback is Spring Boot's default provider, so
+           this matches what this service already has on its runtime
+           classpath via spring-boot-starter-web /
+           spring-boot-starter-logging; no runtime dependency change
+           here, test scope only. -->
+      <groupId>ch.qos.logback</groupId>
+      <artifactId>logback-classic</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+      </plugin>
+      <plugin>
+        <!-- ADR 0013 Decision 9: this service generates its OWN Envelope
+             classes from the shared contracts/events/v1/envelope.proto
+             source, as part of its own build, into its own
+             target/generated-sources ; never from a shared jar. A
+             future second service needing the same envelope repeats
+             this exact plugin configuration against the same .proto
+             file; it never adds a dependency on this service's jar. -->
+        <groupId>org.xolstice.maven.plugins</groupId>
+        <artifactId>protobuf-maven-plugin</artifactId>
+        <configuration>
+          <protocArtifact>com.google.protobuf:protoc:${protobuf.version}:exe:${os.detected.classifier}</protocArtifact>
+          <protoSourceRoot>${project.basedir}/../../contracts/events/v1</protoSourceRoot>
+        </configuration>
+        <executions>
+          <execution>
+            <goals>
+              <goal>compile</goal>
+            </goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+    <extensions>
+      <extension>
+        <groupId>kr.motd.maven</groupId>
+        <artifactId>os-maven-plugin</artifactId>
+        <version>1.7.1</version>
+      </extension>
+    </extensions>
+  </build>
+</project>
