@@ -1,22 +1,21 @@
-# ADR 0013 (proposed) -- Microservice autonomy and contract-based sharing
+# ADR 0013 -- Microservice autonomy and contract-based sharing
 
-Status: proposed -- findings endorsed and Path A (Decision 3) accepted
-by the repository owner; five of this document's original open
-questions are resolved into Decisions 6-9, below; pending only this
-file's own PR merge to `main` for formal ADR-number assignment per
-`docs/adr/README.md`'s numbering convention. This file's final path is
-`docs/adr/<NNNN>-microservice-autonomy.md`. Per the repository owner's
-explicit sequencing: Track B is not refactored until this ADR merges
-to `main` -- the refactor is done against a ratified rule, not a
-proposed one.
+Status: accepted -- findings endorsed and Path A (Decision 3) accepted
+by the repository owner; all five of this document's original open
+questions are resolved into Decisions 6-9, below; merged to `main` and
+assigned its final number and path,
+`docs/adr/0013-microservice-autonomy.md`, per `docs/adr/README.md`'s
+numbering convention. Per the repository owner's explicit sequencing,
+Track B was not refactored until this ADR merged -- the refactor is
+done against this ratified rule, not a proposed one.
 
 ## Numbering note
 
-Following `docs/adr/README.md`'s convention, this file is filed as
-`docs/adr/XXXX-proposed-microservice-autonomy.md` and numbered at merge.
-0013 is the next free slot as of this writing (0001-0012 are all
-assigned on `main` or already in flight); if another draft merges first,
-this one renumbers at its own merge, per the existing convention.
+Following `docs/adr/README.md`'s convention, this document was drafted
+at the placeholder path `docs/adr/XXXX-proposed-microservice-autonomy.md`
+and renamed to its final path, `docs/adr/0013-microservice-autonomy.md`,
+at merge to `main` -- 0013 being the next free slot at merge time
+(0001-0012 were already assigned).
 
 ## Context
 
@@ -203,11 +202,9 @@ Why this shape, specifically:
 
 ## 5. New ADR needed: yes -- proposed content for ADR 0013
 
-This document, once agreed and merged, *is* ADR 0013 (per the numbering
-convention, it is renamed at merge from
-`XXXX-proposed-microservice-autonomy.md` to
-`<NNNN>-microservice-autonomy.md`). Its Decisions section, to be
-finalized at merge, should read:
+This document *is* ADR 0013, per the numbering convention: it was
+renamed at merge from `XXXX-proposed-microservice-autonomy.md` to
+`0013-microservice-autonomy.md`. Its Decisions section reads:
 
 ### Decision 1: The rule, made binding, verbatim
 
