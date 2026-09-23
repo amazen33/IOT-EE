@@ -49,7 +49,27 @@ class FakeS3Client:
             raise _ClientError("NoSuchKey")
         return {"Body": _Readable(self._objects[Key])}
 
-    def put_object(self, *, Bucket, Key, Body, ContentType, ObjectLockMode, ObjectLockRetainUntilDate, ObjectLockLegalHoldStatus):
+    def put_object(
+        self,
+        *,
+        Bucket,
+        Key,
+        Body,
+        ContentType,
+        ObjectLockMode,
+        ObjectLockRetainUntilDate,
+        ObjectLockLegalHoldStatus,
+        IfNoneMatch=None,
+    ):
+        # Mirrors S3's real conditional-write behavior for
+        # IfNoneMatch="*": reject with the same error shape a real
+        # boto3 ClientError raises for HTTP 412, regardless of what the
+        # caller's own head_object pre-check may have already seen --
+        # this is what makes it possible to test that the atomic write
+        # (not the earlier, racy pre-check) is what actually rejects a
+        # duplicate.
+        if IfNoneMatch == "*" and Key in self._objects:
+            raise _ClientError("PreconditionFailed")
         self._objects[Key] = Body
         self._legal_hold[Key] = ObjectLockLegalHoldStatus
 
@@ -105,6 +125,20 @@ class PutGetRoundtripTests(unittest.TestCase):
         with self.assertRaises(DuplicateRecordError):
             store.put(_record())
 
+    def test_duplicate_put_raises_via_atomic_conditional_write_even_if_precheck_races(self):
+        """The head_object pre-check is a fast-path optimization, not
+        the write-once guarantee -- simulate a race where the pre-check
+        would have (wrongly) reported the key absent, and confirm the
+        IfNoneMatch="*" conditional put_object() call itself is what
+        rejects the duplicate."""
+        store, client = _store()
+        record = _record()
+        key = f"{record.record_id}.json"
+        client._objects[key] = b"{}"  # another writer's object, already present
+        client.head_object = lambda *, Bucket, Key: (_ for _ in ()).throw(_ClientError("404"))
+        with self.assertRaises(DuplicateRecordError):
+            store.put(record)
+
     def test_get_unknown_raises(self):
         store, _ = _store()
         with self.assertRaises(UnknownRecordError):
@@ -130,6 +164,20 @@ class LegalHoldAndExpireTests(unittest.TestCase):
     def test_expire_after_retention_and_no_hold_succeeds(self):
         store, _ = _store()
         record = _record(retention_until="2020-01-01T00:00:00Z")
+        store.put(record)
+        store.expire(record.record_id, as_of="2026-01-01T00:00:00Z")
+        with self.assertRaises(UnknownRecordError):
+            store.get(record.record_id)
+
+    def test_expire_compares_parsed_timestamps_not_raw_strings(self):
+        """retention_until expressed with a +02:00 offset that is the
+        exact same instant as an as_of value expressed in Z. A naive
+        string comparison sees "02:00:00+02:00" as lexicographically
+        later than "00:00:00Z" and would incorrectly treat retention as
+        not yet elapsed, even though the two are the same instant (so
+        retention has, in fact, elapsed)."""
+        store, _ = _store()
+        record = _record(retention_until="2026-01-01T02:00:00+02:00")
         store.put(record)
         store.expire(record.record_id, as_of="2026-01-01T00:00:00Z")
         with self.assertRaises(UnknownRecordError):

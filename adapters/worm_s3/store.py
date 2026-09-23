@@ -45,6 +45,18 @@ Key design points, each mechanically enforced by scripts/check.py:
   versioned bucket, creates a delete marker rather than guaranteeing
   physical removal of the prior version -- consistent with M6's already-
   documented "no production retention claims" limitation.
+- **Duplicate-write rejection is atomic, not just checked-then-written.**
+  ``put`` passes ``IfNoneMatch="*"`` on the ``put_object`` call itself,
+  so a genuinely concurrent duplicate write is rejected by S3 at the
+  point of write (HTTP 412, mapped to ``DuplicateRecordError``), not
+  merely by an earlier ``head_object`` read that a second writer could
+  race past. The ``head_object`` pre-check remains, but only as a
+  fast-path optimization that avoids an unnecessary write attempt in
+  the common (non-racing) case -- it is not itself relied on for
+  correctness. This requires the configured S3-compatible endpoint to
+  support conditional writes (``If-None-Match``); see
+  docs/adapters-worm-s3.md's Known Limitations if that support cannot
+  be confirmed for a given target.
 """
 
 from __future__ import annotations
@@ -74,6 +86,7 @@ from evidence.worm import (
 _OBJECT_LOCK_MODE = "GOVERNANCE"
 
 _NOT_FOUND_CODES = {"404", "NoSuchKey", "NotFound"}
+_PRECONDITION_FAILED_CODES = {"PreconditionFailed", "412"}
 
 
 class AdapterNotInstalledError(RuntimeError):
@@ -100,6 +113,18 @@ def _is_not_found(exc: Exception) -> bool:
     if not isinstance(response, dict):
         return False
     return response.get("Error", {}).get("Code") in _NOT_FOUND_CODES
+
+
+def _is_precondition_failed(exc: Exception) -> bool:
+    """Duck-typed the same way as _is_not_found (see that function's
+    docstring): matches a real boto3 ClientError's shape when a
+    conditional put_object's IfNoneMatch precondition fails (HTTP 412),
+    and lets a lightweight test double raise the same shape without
+    needing botocore importable."""
+    response = getattr(exc, "response", None)
+    if not isinstance(response, dict):
+        return False
+    return response.get("Error", {}).get("Code") in _PRECONDITION_FAILED_CODES
 
 
 def _record_to_body(record: EvidenceRecord) -> bytes:
@@ -156,6 +181,13 @@ class S3WormStore(WormStore):
 
     def put(self, record: EvidenceRecord) -> None:
         key = _key(record.record_id)
+        # Fast-path, non-atomic pre-check: avoids an unnecessary write
+        # attempt in the common (non-racing) case. This is NOT the
+        # write-once guarantee -- a concurrent writer can race past it
+        # between this read and the put_object call below. The actual
+        # guarantee is the IfNoneMatch="*" conditional write further
+        # down, which S3 (or a conditional-write-capable S3-compatible
+        # endpoint) rejects atomically at the point of write.
         try:
             self._client.head_object(Bucket=self._bucket, Key=key)
         except Exception as exc:
@@ -164,15 +196,24 @@ class S3WormStore(WormStore):
         else:
             raise DuplicateRecordError(f"Record '{record.record_id}' already exists (write-once store)")
 
-        self._client.put_object(
-            Bucket=self._bucket,
-            Key=key,
-            Body=_record_to_body(record),
-            ContentType="application/json",
-            ObjectLockMode=_OBJECT_LOCK_MODE,
-            ObjectLockRetainUntilDate=_parse_iso8601(record.retention_until),
-            ObjectLockLegalHoldStatus="ON" if record.legal_hold else "OFF",
-        )
+        try:
+            self._client.put_object(
+                Bucket=self._bucket,
+                Key=key,
+                Body=_record_to_body(record),
+                ContentType="application/json",
+                ObjectLockMode=_OBJECT_LOCK_MODE,
+                ObjectLockRetainUntilDate=_parse_iso8601(record.retention_until),
+                ObjectLockLegalHoldStatus="ON" if record.legal_hold else "OFF",
+                IfNoneMatch="*",
+            )
+        except Exception as exc:
+            if _is_precondition_failed(exc):
+                raise DuplicateRecordError(
+                    f"Record '{record.record_id}' already exists (write-once store; "
+                    "detected by the atomic conditional write, not the pre-check)"
+                ) from exc
+            raise
 
     def get(self, record_id: str) -> EvidenceRecord:
         key = _key(record_id)
@@ -225,7 +266,13 @@ class S3WormStore(WormStore):
         record = self.get(record_id)
         if record.legal_hold:
             raise LegalHoldActiveError(f"Record '{record_id}' is under legal hold and cannot be expired")
-        if as_of < record.retention_until:
+        # Parsed comparison, not raw string comparison: ISO-8601 permits
+        # both a "Z" suffix and an explicit "+HH:MM"/"-HH:MM" offset (see
+        # evidence.records._TIMESTAMP_PATTERN), and two timestamps in
+        # different-but-equivalent forms do not compare correctly as
+        # strings (e.g. "02:00:00+02:00" sorts after "00:00:00Z" even
+        # though they are the same instant).
+        if _parse_iso8601(as_of) < _parse_iso8601(record.retention_until):
             raise RetentionNotElapsedError(
                 f"Record '{record_id}' retention runs until {record.retention_until}, not yet {as_of}"
             )

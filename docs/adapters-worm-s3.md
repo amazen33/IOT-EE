@@ -41,6 +41,14 @@ for full detail):
   S3-compatible bucket. Legal hold and retention use real S3 Object Lock
   (`GOVERNANCE` mode); `get` reads the object's actual legal-hold status
   back from S3 on every call rather than trusting an in-body value.
+  `put`'s duplicate-write rejection is atomic: `IfNoneMatch="*"` on the
+  `put_object` call itself is what a concurrent duplicate write is
+  actually rejected by (HTTP 412 -> `DuplicateRecordError`); the earlier
+  `head_object` read is a fast-path optimization only, not the
+  correctness guarantee (see Known Limitations below for backend
+  support). `expire` compares parsed timestamps, not raw ISO-8601
+  strings, so a `retention_until`/`as_of` pair expressed with different
+  (but equivalent) UTC offsets still compares correctly.
   `AdapterNotInstalledError` is raised (never a bare `ImportError`) when
   constructing a store without an injected client and without the
   optional `boto3` extra installed. `worm_store_from_env` builds a store
@@ -95,6 +103,24 @@ for full detail):
 
 These are documented here as blocked, per the contract's requirement to
 record unavailable external verification as blocked rather than passed.
+
+## Known Limitations
+
+- **Atomic duplicate-write rejection requires backend support for
+  conditional writes.** `put`'s `IfNoneMatch="*"` on `put_object` is the
+  actual write-once guarantee under concurrency; AWS S3 itself has
+  supported this since August 2024, and S3-compatible targets vary in
+  when/whether they added it. If a configured target predates or lacks
+  `If-None-Match` support, its behavior on that parameter is
+  target-specific (some ignore an unsupported condition silently,
+  others error) and has not been verified against every S3-compatible
+  backend this adapter might be pointed at. Until a specific target's
+  support is confirmed (e.g. by a live-test run against it), treat
+  duplicate rejection there as write-once-checked (the `head_object`
+  pre-check still runs and still rejects a non-racing duplicate) rather
+  than atomic -- adequate at test-bucket scale, where concurrent writers
+  racing the same `record_id` are not an expected scenario, but not a
+  claim of true concurrency safety against an unconfirmed target.
 
 ## Acceptance criteria
 | Requirement | How it is met |
