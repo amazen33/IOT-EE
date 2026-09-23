@@ -1,0 +1,3 @@
+# Synthetic fixture -- exercises common/src/main/resources/schema/cfg.schema.json.
+service_name: iotee-service-identity
+tenant_mode: schema-per-tenant

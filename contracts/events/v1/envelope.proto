@@ -1,0 +1,94 @@
+syntax = "proto3";
+
+package com.iotee.platform.contracts.events.v1;
+
+option java_package = "com.iotee.platform.contracts.events.v1";
+option java_outer_classname = "EnvelopeProto";
+option java_multiple_files = true;
+
+// Platform event/command envelope, CloudEvents v1.0 shaped (ADR 0012
+// Decision 4). This is the ONLY wire envelope this platform uses for
+// events and commands crossing a bounded-context boundary -- Protobuf
+// only, never Avro, per that decision.
+//
+// ADR 0013 (microservice autonomy and contract-based sharing): this
+// .proto file is the shared artifact. It lives here, at the repository
+// root under contracts/, as source text only -- there is no generated-
+// code jar published from this directory and no pom.xml here. Each
+// service that needs the envelope configures protobuf-maven-plugin in
+// its own pom.xml to compile this file into that service's own
+// target/generated-sources on every build (see
+// services/identity/pom.xml for the reference configuration). The
+// resulting generated Java classes are that service's own build
+// artifact, not a shared runtime dependency -- a second service needing
+// this envelope repeats the same protobuf-maven-plugin configuration
+// against this same file, never adds a dependency on the first
+// service's jar.
+//
+// The CloudEvents "required" attributes (id, source, type, specversion)
+// and "optional" time attribute map directly to fields 1-5. Fields 6+
+// are this platform's own CloudEvents extension attributes: they are
+// not part of the CloudEvents core spec, but every envelope this
+// platform emits sets all of them, so from this platform's own
+// perspective they are effectively required.
+message Envelope {
+  // CloudEvents "id": unique per envelope. Not a business key.
+  string id = 1;
+
+  // CloudEvents "source": URI identifying the context/service that
+  // produced this envelope, e.g. "urn:iotee:service:identity".
+  string source = 2;
+
+  // CloudEvents "type": reverse-DNS-style event/command type, e.g.
+  // "com.iotee.identity.tenant.provisioned.v1".
+  string type = 3;
+
+  // CloudEvents "specversion": fixed at "1.0" for every envelope this
+  // platform emits.
+  string specversion = 4;
+
+  // CloudEvents "time": RFC 3339 timestamp, set at envelope creation.
+  string time = 5;
+
+  // --- Platform extension attributes (ADR 0012 Decision 4) ---
+
+  // Correlates every envelope and log line produced while handling one
+  // originating request, across service and transport boundaries. Same
+  // value as the X-Correlation-ID header/metadata/Kafka header for the
+  // request that caused this envelope to be produced (see each
+  // service's own correlation/CorrelationIdContext.java -- ADR 0013
+  // Decision 1/2: this is project-authored runtime logic, so every
+  // service that needs it owns its own copy; it is never a shared
+  // dependency). Never client-set for a *new* correlation chain -- see
+  // that class's Javadoc for the origin/override rule this field
+  // enforces.
+  string correlation_id = 6;
+
+  // Identifies the specific envelope (event or command) that directly
+  // caused this one to be produced, for cause-and-effect tracing
+  // distinct from the broader correlation_id chain. Empty for an
+  // envelope with no direct envelope cause (e.g. the first envelope in
+  // a correlation chain, originated by an external HTTP/gRPC request).
+  string causation_id = 7;
+
+  // Tenant this envelope belongs to. Every envelope must set this --
+  // there is no cross-tenant or tenant-less envelope in this platform.
+  string tenant_id = 8;
+
+  // Idempotency key for exactly-once-effect processing by consumers.
+  // Distinct from `id` (which identifies this specific envelope
+  // instance): a producer retry after a delivery failure reuses the
+  // SAME idempotency_key but MAY mint a new `id`. Consumers dedupe on
+  // (tenant_id, idempotency_key), not on `id`, per the platform's
+  // idempotent-consumer requirement.
+  string idempotency_key = 9;
+
+  // JSON- or Protobuf-encoded event/command-specific payload. Kept
+  // opaque at the envelope level -- this file does not know or care
+  // what any specific event/command's payload looks like.
+  bytes data = 10;
+
+  // RFC 2046 media type of `data`, e.g. "application/json" or
+  // "application/x-protobuf". CloudEvents calls this "datacontenttype".
+  string data_content_type = 11;
+}

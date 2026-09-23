@@ -1,0 +1,219 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <groupId>com.iotee.platform</groupId>
+  <artifactId>iotee-platform-parent</artifactId>
+  <version>0.1.0-SNAPSHOT</version>
+  <packaging>pom</packaging>
+
+  <name>IOT-EE Platform (parent)</name>
+  <description>
+    Maven multi-module parent for the Java platform per ADR 0011
+    (platform architecture and language stack), ADR 0012 (M9 foundation
+    scope, Track B), and ADR 0013 (microservice autonomy and
+    contract-based sharing). Per ADR 0013, this parent deliberately has
+    no shared-runtime module: "common/" and "adapters/web-spring/" (M9's
+    first Track B attempt) do not exist here. Contract sources live at
+    the repository root under contracts/ (proto and JSON Schema files
+    only, no generated-code jar); architecture/ holds shared ArchUnit
+    rule definitions, consumed at test scope only; each services/*
+    module owns its own domain, RBAC, correlation, and Spring wiring
+    code, generating its own Protobuf classes from contracts/ as part of
+    its own build. The spec/ tree (see spec/README.md) remains the
+    authoritative M0-M8 Python reference implementation, frozen per ADR
+    0012 Decision 8; this parent is the M9+ Java platform alongside it.
+  </description>
+
+  <modules>
+    <module>architecture</module>
+    <module>services/identity</module>
+  </modules>
+
+  <properties>
+    <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <maven.compiler.release>17</maven.compiler.release>
+    <spring-boot.version>3.3.4</spring-boot.version>
+    <spring-cloud.version>2023.0.3</spring-cloud.version>
+    <archunit.version>1.3.0</archunit.version>
+    <protobuf.version>3.25.5</protobuf.version>
+    <protobuf-maven-plugin.version>0.6.1</protobuf-maven-plugin.version>
+    <json-schema-validator.version>1.5.1</json-schema-validator.version>
+    <cloudevents.version>3.0.0</cloudevents.version>
+    <junit.version>5.10.3</junit.version>
+    <maven-enforcer-plugin.version>3.5.0</maven-enforcer-plugin.version>
+  </properties>
+
+  <dependencyManagement>
+    <dependencies>
+      <dependency>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-dependencies</artifactId>
+        <version>${spring-boot.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>org.springframework.cloud</groupId>
+        <artifactId>spring-cloud-dependencies</artifactId>
+        <version>${spring-cloud.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+
+      <!-- The ONE intra-repo artifact any service is ever allowed to depend
+           on, and only at test scope (ADR 0013 Decision 8): shared ArchUnit
+           rule definitions. No other com.iotee.platform:* artifact is
+           declared here ; there is no shared runtime module to declare
+           (ADR 0013 retires common/ and adapters/web-spring/ outright; see
+           this pom's own description and the enforce-no-shared-runtime
+           Enforcer rule below, which makes this permanent, not just true
+           today because nothing has been added back yet). -->
+      <dependency>
+        <groupId>com.iotee.platform</groupId>
+        <artifactId>iotee-architecture</artifactId>
+        <version>${project.version}</version>
+        <scope>test</scope>
+      </dependency>
+
+      <!-- Protobuf runtime for CloudEvents-shaped envelope classes each
+           service generates for itself from contracts/ (ADR 0012 Decision
+           4; ADR 0013 Decision 2/9) ; an ordinary third-party dependency
+           every service declares independently, never a project-authored
+           shared library. -->
+      <dependency>
+        <groupId>com.google.protobuf</groupId>
+        <artifactId>protobuf-java</artifactId>
+        <version>${protobuf.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.cloudevents</groupId>
+        <artifactId>cloudevents-protobuf</artifactId>
+        <version>${cloudevents.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>io.cloudevents</groupId>
+        <artifactId>cloudevents-core</artifactId>
+        <version>${cloudevents.version}</version>
+      </dependency>
+
+      <!-- cfg.yaml draft JSON Schema validation (ADR 0012 Decision 3) ;
+           also an ordinary third-party library, per ADR 0013 Decision 2. -->
+      <dependency>
+        <groupId>com.networknt</groupId>
+        <artifactId>json-schema-validator</artifactId>
+        <version>${json-schema-validator.version}</version>
+      </dependency>
+
+      <!-- ArchUnit: the Java analog of spec/scripts/check.py's mechanical
+           boundary gate. A standard third-party testing library (ADR 0013
+           Decision 2), not project-authored logic ; architecture/'s OWN
+           code (the rule factories) is the project-authored, shareable
+           part, and it is shareable only because it is a build-time
+           architecture-rule artifact, per ADR 0013's own definition of
+           what may be shared. -->
+      <dependency>
+        <groupId>com.tngtech.archunit</groupId>
+        <artifactId>archunit-junit5</artifactId>
+        <version>${archunit.version}</version>
+        <scope>test</scope>
+      </dependency>
+    </dependencies>
+  </dependencyManagement>
+
+  <dependencies>
+    <!-- Every module gets JUnit 5 + ArchUnit for the boundary gate, without repeating scope/version -->
+    <dependency>
+      <groupId>org.junit.jupiter</groupId>
+      <artifactId>junit-jupiter</artifactId>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>com.tngtech.archunit</groupId>
+      <artifactId>archunit-junit5</artifactId>
+      <scope>test</scope>
+    </dependency>
+  </dependencies>
+
+  <build>
+    <pluginManagement>
+      <plugins>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-compiler-plugin</artifactId>
+          <version>3.13.0</version>
+        </plugin>
+        <plugin>
+          <groupId>org.apache.maven.plugins</groupId>
+          <artifactId>maven-surefire-plugin</artifactId>
+          <version>3.3.1</version>
+        </plugin>
+        <plugin>
+          <groupId>org.springframework.boot</groupId>
+          <artifactId>spring-boot-maven-plugin</artifactId>
+          <version>${spring-boot.version}</version>
+        </plugin>
+        <plugin>
+          <groupId>org.xolstice.maven.plugins</groupId>
+          <artifactId>protobuf-maven-plugin</artifactId>
+          <version>${protobuf-maven-plugin.version}</version>
+        </plugin>
+      </plugins>
+    </pluginManagement>
+    <plugins>
+      <!-- ADR 0013 Decision 5.1 + Decision 8: mechanical, platform-wide
+           enforcement that no module ever declares a compile- or
+           runtime-scope dependency on another com.iotee.platform:*
+           artifact. This is what makes "no shared runtime module" a
+           build failure, not a convention ; it applies to every module
+           via plugin inheritance (declared directly under <plugins>, not
+           <pluginManagement>, so it is not opt-in per module) and governs
+           every services/*, adapters/*, or future module the same way,
+           automatically, without each module's own pom.xml having to
+           remember to add it. iotee-architecture is exempt only at test
+           scope (the version above is pinned with <scope>test</scope>;
+           this rule bans compile/runtime scope specifically, so a
+           test-scope architecture dependency is unaffected, while a
+           compile-scope one ; exactly Decision 8's "architecture/ must
+           stay test-scope" rule ; fails the build here). -->
+      <plugin>
+        <groupId>org.apache.maven.plugins</groupId>
+        <artifactId>maven-enforcer-plugin</artifactId>
+        <version>${maven-enforcer-plugin.version}</version>
+        <executions>
+          <execution>
+            <id>enforce-no-shared-runtime</id>
+            <goals>
+              <goal>enforce</goal>
+            </goals>
+            <configuration>
+              <rules>
+                <bannedDependencies>
+                  <excludes>
+                    <exclude>com.iotee.platform:*:*:*:compile</exclude>
+                    <exclude>com.iotee.platform:*:*:*:runtime</exclude>
+                  </excludes>
+                  <message>
+                    ADR 0013 (microservice autonomy and contract-based
+                    sharing) prohibits any compile- or runtime-scope
+                    dependency on another com.iotee.platform:* artifact.
+                    Services share contract sources (contracts/) and
+                    build-time architecture rules (architecture/, test
+                    scope only) -- never a shared runtime library. If you
+                    are trying to reuse code across services, that code
+                    belongs in each service's own source tree
+                    (duplicated, per ADR 0013 Decision 6), not in a new
+                    shared module.
+                  </message>
+                </bannedDependencies>
+              </rules>
+              <fail>true</fail>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

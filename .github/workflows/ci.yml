@@ -17,3 +17,37 @@ jobs:
           python-version: ${{ matrix.python }}
       - run: python -m pip install -r spec/requirements.txt
       - run: python spec/scripts/check.py
+
+  java-platform-bootstrap:
+    # Track B (ADR 0012 Decisions 3-6, refactored per ADR 0013): the Java
+    # multi-module Maven bootstrap under the repository root (pom.xml,
+    # architecture/, services/identity/) plus the source-only contracts/
+    # directory it generates Protobuf classes from. Independent of the
+    # `foundation` job above -- spec/ (Python) and the Java platform are
+    # separate gates that both must pass, per the development contract's
+    # "full regression gate" rule. This is the actual `mvn verify` run
+    # that could not be completed in the sandboxed environment this
+    # bootstrap was written in (see services/identity/README.md,
+    # "Verification status") -- this job is that verification, for
+    # real, on every push and PR. It also exercises the Maven Enforcer
+    # `bannedDependencies` rule (ADR 0013's dependency-declaration-level
+    # no-shared-runtime guarantee): `mvn verify` fails the build outright
+    # if any module reintroduces a `com.iotee.platform:*` artifact at
+    # compile or runtime scope.
+    #
+    # Uses the runner's pre-installed Maven (via setup-java's default
+    # cache: maven wiring). No Maven wrapper (mvnw) is committed in this
+    # repository yet -- GitHub-hosted runners ship Maven already, so the
+    # wrapper is not required for CI; adding one for developer machines
+    # is tracked as follow-up work, not part of this ADR 0013 refactor.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+      - run: mvn -version
+      - run: mvn -B -f pom.xml verify
