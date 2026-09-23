@@ -1,11 +1,14 @@
 # ADR 0013 (proposed) -- Microservice autonomy and contract-based sharing
 
-Status: proposed / audit draft -- pending repository owner agreement. Filed
-under `docs/adr/README.md`'s numbering convention (a real number is
-assigned at merge, not now); this file's final path is
-`docs/adr/<NNNN>-microservice-autonomy.md`. No further Track B code is
-written against this document's conclusions until the repository owner
-picks a path in Decision 3, below.
+Status: proposed -- findings endorsed and Path A (Decision 3) accepted
+by the repository owner; five of this document's original open
+questions are resolved into Decisions 6-9, below; pending only this
+file's own PR merge to `main` for formal ADR-number assignment per
+`docs/adr/README.md`'s numbering convention. This file's final path is
+`docs/adr/<NNNN>-microservice-autonomy.md`. Per the repository owner's
+explicit sequencing: Track B is not refactored until this ADR merges
+to `main` -- the refactor is done against a ratified rule, not a
+proposed one.
 
 ## Numbering note
 
@@ -245,6 +248,26 @@ looks:
   never distributed as a compiled shared jar (Decision 2 of this ADR
   directly resolves G5).
 
+**Standard format/serialization libraries are explicitly allowed as
+ordinary per-service third-party dependencies -- resolved, not merely
+assumed.** The rule prohibits *project-authored* runtime business logic
+shared across services; it does not prohibit any service from
+depending on Jackson, `protobuf-java`, or the CloudEvents SDK
+(`io.cloudevents:cloudevents-core`/`cloudevents-protobuf`), each
+declaring the same third-party coordinates independently, the same way
+every service already independently depends on `spring-boot-starter-web`
+without that being "shared runtime." This is stated explicitly, in the
+ADR itself, precisely because the alternative failure mode is real: a
+well-meaning contributor "purifying" a service by hand-rolling its own
+Protobuf/CloudEvents serialization to avoid an apparent dependency
+violation, which would be a strictly worse outcome (bespoke,
+undertested wire-format code, in the name of a rule that never asked
+for that). The test stays the one this Decision already states: does
+consuming it require executing *this platform's own* business
+decision, or does it require only a standard, independently-versioned
+third-party library any of many unrelated projects also depend on
+as-is? The former is never shared; the latter is unrestricted.
+
 ### Decision 3: Track B refactors now (Section 3, Path A)
 
 Adopted per the repository owner's own prior and this audit's cost
@@ -294,7 +317,7 @@ repository's `scripts/check.py` discipline:
    violation, asserted to fail, with the specific forbidden package
    named in the assertion.
 
-### Decision 6: Duplication is accepted cost, not technical debt
+### Decision 6: Duplication is accepted cost, not technical debt -- with no ceiling
 
 Explicitly stated so a future PR reviewer does not "fix" the intended
 duplication by reintroducing a shared module: near-identical
@@ -302,51 +325,80 @@ correlation-ID binding code, or near-identical small RBAC primitives,
 appearing in `services/identity`, `services/device`, etc. is the
 correct, intended state under this ADR, not an oversight to consolidate.
 
-## 6. Open questions for the repository owner
+**Resolved (repository owner, this ADR's ratification round): no
+ceiling.** Duplication is the price of autonomy, stated as a decision
+principle rather than a threshold to monitor. Repeated near-identical
+code across services is read as a signal that a service boundary is
+drawn wrong (the two services may not actually be as separate as their
+deployment topology suggests), never as a case for introducing a shared
+JAR to remove the duplication. If a boundary question arises from
+observed duplication, it is resolved as a bounded-context/domain
+question (is this really two services?), not as a build-dependency
+question (should this become `common` again?). No future ADR may
+reopen this as "duplication has now crossed N services, time for a
+shared library" -- that reopening is exactly the reasoning this
+Decision forecloses.
 
-1. **Does Decision 2's "generated classes are implementation artifacts
-   of that service" extend to CloudEvents' own Java SDK types
-   (`io.cloudevents:cloudevents-core`/`cloudevents-protobuf`)?**
-   `common/pom.xml` currently depends on these as third-party libraries,
-   not generated code -- presumably fine to keep as an ordinary
-   per-service third-party dependency (every service would declare the
-   same coordinates independently), but worth an explicit yes/no since
-   it is adjacent to the envelope question.
-2. **Where does `contracts/` live relative to `spec/`?** ADR 0012
-   Decision 7 already relocated the Python spec to `spec/`; should
-   `contracts/` be a new top-level sibling (as sketched in Section 4),
-   or should the `.proto`/JSON Schema sources live under
-   `spec/contracts/` alongside the Python reference implementation they
-   also conceptually describe? The audit's sketch assumes top-level
-   `contracts/`, matching the repository owner's own sketch, but this
-   is worth confirming rather than assuming.
-3. **Does the `architecture/` module's build-time-only status need its
-   own ArchUnit/Enforcer rule to keep it honest** (i.e., a rule that
-   fails the build if anything in `architecture/` is ever declared as a
-   non-test-scope dependency by a service)? This audit's Decision 5
-   proposes enforcement *of* services via `architecture/`; it does not
-   yet propose enforcement *of* `architecture/` itself staying
-   build-time-only. Worth a decision before M10 multiplies the number
-   of services that could get this wrong.
-4. **Does this ADR's duplication-is-accepted-cost stance (Decision 6)
-   have a ceiling?** If, at M12+, ten services duplicate the same
-   50-line correlation-binding snippet with zero behavioral
-   divergence, is a code-generation template (a Maven archetype
-   materializing the snippet into each new service at scaffold time,
-   never a runtime dependency) an acceptable way to reduce duplication
-   without reintroducing shared runtime, or does the repository owner
-   want duplication accepted without qualification, indefinitely? Not
-   blocking for M9/Track B; worth settling before it becomes an
-   argument made under time pressure at M12.
-5. **Should this ADR's Enforcer/ArchUnit enforcement (Decision 5) be
+### Decision 7: `contracts/` location -- repository root, sibling to `spec/`
+
+**Resolved (repository owner):** `contracts/` lives at the repository
+root, as a sibling to `spec/`, `services/`, and `adapters/` -- not
+nested under `spec/`. Rationale, as stated: `contracts/` is
+language-neutral and shared by both Java and Python consumers (the
+platform's own services today, and the Python RAG subsystem's own
+future Kafka consumers per ADR 0011 Decision 1), so it does not belong
+under `spec/`, which ADR 0012 Decision 7 already scoped specifically to
+the Python *reference implementation*, a different and narrower thing
+than a cross-language contract source directory. This confirms Section
+4's sketch as final, not merely illustrative.
+
+### Decision 8: `architecture/` module is test-scope only, explicitly
+
+**Resolved (repository owner):** the `architecture/` module (Section
+4) is allowed to be a shared dependency precisely because, and only
+because, it is `test`-scope in every consumer's `pom.xml` -- never
+`compile`/`main` scope. This is the same build/test-time vs. runtime
+distinction Decision 2 already draws for ArchUnit rules generally, now
+stated as its own explicit module-level constraint so it cannot be
+missed when `architecture/` is scaffolded: a `pom.xml` that declares
+`iotee-architecture` (or whatever it is named) without `<scope>test</scope>`
+is itself the violation, and Decision 5's Maven Enforcer rule set
+(below) is extended to check this specifically -- a `bannedDependencies`
+(or `requireUpperBoundDeps`-adjacent) rule keyed on scope, not just on
+artifact identity, so a compile-scope `architecture/` dependency fails
+the build the same way a compile-scope dependency on another service
+would.
+
+### Decision 9: Per-service Protobuf generation -- confirmed as the standard idiom
+
+**Resolved (repository owner):** each service's `pom.xml` configures
+`protobuf-maven-plugin` with an additional proto source root pointing
+at `../contracts/events/v1` (or the relevant `contracts/` subpath),
+generating that service's own classes into its own
+`target/generated-sources` on every build -- exactly Section 4's
+sketch, now confirmed as the standard idiom for every service that
+consumes a `.proto` contract, not a Track-B-specific special case.
+Every future service (`services/device`, `services/asset`, ...) that
+needs the envelope contract configures this identically; no service
+ever adds a `<dependency>` on another module to get the envelope
+classes.
+
+## 6. Remaining open question for the repository owner
+
+Four of the five questions this audit originally raised are resolved
+above (Decisions 2, 6, 7, 8, 9). One remains open:
+
+1. **Should this ADR's Enforcer/ArchUnit enforcement (Decision 5) be
    built as part of Track B's own refactor (Path A, Section 3), or as
    an immediate follow-up commit once Track B's refactored shape
    lands?** This audit did not assume an answer -- Section 3's cost
    estimate for Path A covers the *structural* move (contracts/,
    per-service RBAC/correlation, retiring the two shared modules) but
-   treats Decision 5's mechanical enforcement as a closely related but
-   separable unit of work, since it is genuinely new rule-authoring
-   rather than a move of existing code.
+   treats Decision 5's mechanical enforcement (now including Decision
+   8's scope-aware Enforcer rule) as a closely related but separable
+   unit of work, since it is genuinely new rule-authoring rather than a
+   move of existing code. Not blocking this ADR's own merge; worth
+   settling before Track B's refactor commit is scoped in detail.
 
 ## Non-goals (this document does not do)
 
