@@ -132,3 +132,4 @@ scoped answer (see Decision 2).
   scope for this graduation by explicit instruction).
 - Any infrastructure provisioning (still prohibited at this stage per
   `CLAUDE.md`).
+

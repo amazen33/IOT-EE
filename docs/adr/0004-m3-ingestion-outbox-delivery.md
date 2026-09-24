@@ -88,3 +88,4 @@ answer.
   capture.
 - Any infrastructure provisioning (still prohibited at this stage per
   `CLAUDE.md`; M3 remains offline-validation-only, same as M0/M1/M2).
+

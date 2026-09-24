@@ -75,3 +75,4 @@ non-goals in the gate script rather than relying on convention (ADR 0001).
   system.
 - Field/formula mapping, shadow comparison, or golden-rule parity (M3).
 - Any "controlled application" or cutover step (M9).
+

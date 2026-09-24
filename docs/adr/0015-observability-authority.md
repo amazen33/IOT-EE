@@ -7,10 +7,10 @@ bullet of ADR 0011 Decision 3 insofar as that bullet
 calls LGTM "complementary to, not a replacement for" TB CE's built-in
 monitoring.
 
-Related drafts in this set: `XXXX-proposed-tenancy-and-identity.md`,
-`XXXX-proposed-hexagonal-conventions.md`,
-`XXXX-proposed-events-and-metering.md`,
-`XXXX-proposed-streaming-and-rag.md`.
+Related drafts in this set: `0016-tenancy-and-identity.md`,
+`0017-hexagonal-conventions.md`,
+`0018-events-and-metering.md`,
+`0019-streaming-and-rag.md`.
 
 ## Context
 
@@ -82,7 +82,7 @@ two identifiers are carried together and never merged.
   MDC wiring as part of "done", not as a later add-on.
 - Baggage propagates to every downstream call, including third parties.
   Outbound adapters to systems outside the platform (e.g. the payment
-  gateway in `XXXX-proposed-events-and-metering.md`) must strip platform
+  gateway in `0018-events-and-metering.md`) must strip platform
   baggage at egress. Baggage must never carry PII, tenant secrets, or
   anything beyond the correlation ID (ADR 0011 Decision 4).
 - Deployment artifacts must include an OTel Collector and LGTM for every
@@ -116,7 +116,8 @@ two identifiers are carried together and never merged.
 
 ADR 0011 Decisions 2, 3, 4 and Risk 2; ADR 0012 Decision 5; ADR 0013
 (each service owns its own correlation and OTel wiring -- no shared
-observability runtime JAR); `XXXX-proposed-events-and-metering.md`
-(Kafka header carriage); `XXXX-proposed-streaming-and-rag.md` (Flink
-must preserve both headers); `XXXX-proposed-hexagonal-conventions.md`
+observability runtime JAR); `0018-events-and-metering.md`
+(Kafka header carriage); `0019-streaming-and-rag.md` (Flink
+must preserve both headers); `0017-hexagonal-conventions.md`
 (propagation lives in adapters, not domain).
+

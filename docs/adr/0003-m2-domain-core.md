@@ -83,3 +83,4 @@ ingestion/shadow-parity concerns and are explicitly not addressed here.
 - Tank geometry/volume formulas (still an open input per `docs/inputs.md`;
   `Tank.geometry` is a validated-shape placeholder only).
 - Reports, dashboards, or any UI (M4).
+

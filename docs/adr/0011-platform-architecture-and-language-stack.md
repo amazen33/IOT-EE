@@ -1,8 +1,8 @@
 # ADR 0011 -- Platform architecture and language stack: Java/Spring platform, Python for RAG, ThingsBoard CE as an upgradeable compatibility component
 
 Status: accepted, with amendments pending (see
-XXXX-proposed-observability-authority.md and
-XXXX-proposed-hexagonal-conventions.md). M9 Track B Java code
+0015-observability-authority.md and
+0017-hexagonal-conventions.md). M9 Track B Java code
 merged; ADR 0012 established M9 scope.
 
 Supersession and clarification pointers (the passages below are not
@@ -10,19 +10,19 @@ rewritten in this body; read them together with these pointers):
 
 - Decision 3, "Observability" bullet: the "complementary to, not a
   replacement for, TB CE's own built-in monitoring" framing is
-  superseded by `XXXX-proposed-observability-authority.md` -- LGTM is
+  superseded by `0015-observability-authority.md` -- LGTM is
   the authoritative enterprise plane; TB CE's internal monitoring is
   local-debug only.
 - The shared `common/` library (Decision 8's `cfg.yaml` comment, the
   M0 mapping row, the proposed skeleton and its notes, Risk 1's
   `common/src/test`): superseded by ADR 0013 (Decision 4 and its
   `contracts/` + test-scope `architecture/` structure) and by
-  `XXXX-proposed-hexagonal-conventions.md`. There is no shared runtime
+  `0017-hexagonal-conventions.md`. There is no shared runtime
   `common/` module; the `cfg.yaml` schema lives at
   `contracts/cfg/cfg.schema.json`.
 - Decision 5 and the M4 mapping row ("Spring services trust
   APISIX-validated identity headers"): superseded by
-  `XXXX-proposed-tenancy-and-identity.md` -- each service re-verifies
+  `0016-tenancy-and-identity.md` -- each service re-verifies
   the JWT and maps claims to its own `Principal`; APISIX-validated
   headers are advisory, not authoritative; the trust boundary is the
   service. "sys-admin" is the Tier 1 `PRODUCT_ADMIN` role, not a
@@ -30,11 +30,11 @@ rewritten in this body; read them together with these pointers):
 - M3 mapping row ("do not rebuild the transport-layer transactional
   outbox, or a custom Kafka relay"): covers device ingestion only. The
   transactional-outbox rule applies to every other publishing path
-  (`XXXX-proposed-events-and-metering.md`).
+  (`0018-events-and-metering.md`).
 - Device ingress (Decision 2's "device connectivity (MQTT/HTTP/CoAP
   transports)" and the M3 mapping row's "TB CE ... already own[s]
   device-facing ingestion"): superseded by
-  `XXXX-proposed-streaming-and-rag.md` -- TB CE sits downstream of the
+  `0019-streaming-and-rag.md` -- TB CE sits downstream of the
   tier-1 buffer and consumes from Kafka for its own rule engine; it is
   not the ingress owner.
 
@@ -214,7 +214,7 @@ now exists for Java: Maven Enforcer `bannedDependencies` plus each
 service's own ArchUnit rules (ADR 0013 Decision 5), including
 vendor-SDK and persistence-provider denylists restored in the M9
 conformance follow-ups. Per-adapter allow-lists for real adapters are
-defined in `XXXX-proposed-hexagonal-conventions.md` (see Risk 1).
+defined in `0017-hexagonal-conventions.md` (see Risk 1).
 
 ### 4. Constitutional engineering rules (unchanged, now binding for Java too)
 
@@ -673,3 +673,4 @@ Notes:
 - Does not change the status or content of `scripts/check.py` or any
   existing Python module; M0-M8's code and tests are untouched by this
   ADR.
+

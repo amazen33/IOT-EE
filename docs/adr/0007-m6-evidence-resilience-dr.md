@@ -94,3 +94,4 @@ this stage (recorded below).
   open input, not assigned by this milestone's code).
 - Any infrastructure provisioning (still prohibited at this stage per
   `CLAUDE.md`).
+
