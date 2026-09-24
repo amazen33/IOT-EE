@@ -1,17 +1,51 @@
 # ADR 0011 -- Platform architecture and language stack: Java/Spring platform, Python for RAG, ThingsBoard CE as an upgradeable compatibility component
 
-Status: proposed -- pending explicit human agreement. Per the repository
-owner's instruction, no further platform code is written (in either
-language) until this ADR is agreed; M9 and beyond do not start before
-then.
+Status: accepted, with amendments pending (see
+XXXX-proposed-observability-authority.md and
+XXXX-proposed-hexagonal-conventions.md). M9 Track B Java code
+merged; ADR 0012 established M9 scope.
+
+Supersession and clarification pointers (the passages below are not
+rewritten in this body; read them together with these pointers):
+
+- Decision 3, "Observability" bullet: the "complementary to, not a
+  replacement for, TB CE's own built-in monitoring" framing is
+  superseded by `XXXX-proposed-observability-authority.md` -- LGTM is
+  the authoritative enterprise plane; TB CE's internal monitoring is
+  local-debug only.
+- The shared `common/` library (Decision 8's `cfg.yaml` comment, the
+  M0 mapping row, the proposed skeleton and its notes, Risk 1's
+  `common/src/test`): superseded by ADR 0013 (Decision 4 and its
+  `contracts/` + test-scope `architecture/` structure) and by
+  `XXXX-proposed-hexagonal-conventions.md`. There is no shared runtime
+  `common/` module; the `cfg.yaml` schema lives at
+  `contracts/cfg/cfg.schema.json`.
+- Decision 5 and the M4 mapping row ("Spring services trust
+  APISIX-validated identity headers"): superseded by
+  `XXXX-proposed-tenancy-and-identity.md` -- each service re-verifies
+  the JWT and maps claims to its own `Principal`; APISIX-validated
+  headers are advisory, not authoritative; the trust boundary is the
+  service. "sys-admin" is the Tier 1 `PRODUCT_ADMIN` role, not a
+  separate role.
+- M3 mapping row ("do not rebuild the transport-layer transactional
+  outbox, or a custom Kafka relay"): covers device ingestion only. The
+  transactional-outbox rule applies to every other publishing path
+  (`XXXX-proposed-events-and-metering.md`).
+- Device ingress (Decision 2's "device connectivity (MQTT/HTTP/CoAP
+  transports)" and the M3 mapping row's "TB CE ... already own[s]
+  device-facing ingestion"): superseded by
+  `XXXX-proposed-streaming-and-rag.md` -- TB CE sits downstream of the
+  tier-1 buffer and consumes from Kafka for its own rule engine; it is
+  not the ingress owner.
 
 ## Numbering note (read this first)
 
 This ADR was requested as `docs/adr/0009-platform-architecture-and-
 language-stack.md`. That number is already taken by
 `docs/adr/0009-m8-deployment-studio.md` on `main`, and `0010` is already
-used by `docs/adr/0010-worm-s3-adapter-graduation.md` on an unmerged
-branch (`feature/worm-s3-adapter-graduation`). To avoid a collision
+used by `docs/adr/0010-worm-s3-adapter-graduation.md` on what was then an
+unmerged branch (`feature/worm-s3-adapter-graduation`; since merged to
+`main`). To avoid a collision
 regardless of which branch merges first, this document is numbered
 **0011**. If the repository owner prefers different final numbering once
 branches are reconciled, renumbering this file (and updating its
@@ -23,9 +57,8 @@ numbering convention (numbers assigned at merge time, not at branch
 creation) to prevent this exact collision going forward. That
 convention supersedes the ad hoc renumbering done here -- no further
 renumber of this document (0011) is needed once the convention is in
-place, but ADR 0010 (still on the unmerged
-`feature/worm-s3-adapter-graduation` branch) should renumber to the
-next free slot at its own merge time, per that convention.
+place. ADR 0010 has since merged to `main` under its original number,
+so 0011 is final.
 
 ## Context
 
@@ -68,7 +101,7 @@ a specification / reference implementation, not the platform
 codebase.** What it proved out -- domain contracts, ADRs 0001-0009 (and
 the post-M8 graduation, ADR 0010), provider-neutral contracts, an
 append-only evidence ledger, the mechanical isolation-gate discipline
-enforced by `scripts/check.py`, an RBAC permission catalog, a WORM/
+enforced by `spec/scripts/check.py`, an RBAC permission catalog, a WORM/
 evidence contract, an immutable deployment-profile registry, and a
 billing ledger -- is language-portable and must guide the Java
 implementation. The Python source itself is not the deliverable.
@@ -80,8 +113,10 @@ implementation. The Python source itself is not the deliverable.
 Java 17 + Spring Boot/Spring Cloud is the platform language for:
 
 - ThingsBoard CE extensions: custom rule nodes implementing
-  `TbNode`/`@RuleNode`, and custom integrations extending
-  `AbstractIntegration` over gRPC.
+  `TbNode`/`@RuleNode`. (`AbstractIntegration` is Professional
+  Edition/Cloud-only, never CE -- `docs/tb-ce-inventory.md` section
+  2.2; integration-style connectors are external `services/*` talking
+  to TB CE over its public REST API and transports.)
 - Every core bounded context named in the founding brief:
   identity/tenant, device/connectivity, asset/tank, telemetry
   ingestion, rules/automation, alarm/command, reporting, audit/
@@ -117,8 +152,7 @@ already depends on. "Upgradeable" is the operative word, not
 Java services, and TB CE is adopted at new versions with minimal
 friction (Decision 8), not swapped out for a different platform.
 
-Extension model: custom rule nodes (`TbNode`/`@RuleNode`) and custom
-integrations (`AbstractIntegration`, over gRPC) run *inside* TB CE's
+Extension model: custom rule nodes (`TbNode`/`@RuleNode`) run *inside* TB CE's
 own process/plugin model. This is extension, not forking: no
 modification of TB CE's own source tree; an upgrade stays a dependency-
 version bump, never a merge-conflict exercise against a divergent fork.
@@ -129,7 +163,7 @@ talking to TB CE over gRPC/events -- never by editing TB CE internals.
 
 This decision is elevated by the repository owner from a general
 principle to a binding upgrade-friction requirement, addressed fully in
-Decision 9 below: the customization surface stays deliberately thin and
+Decision 8 below: the customization surface stays deliberately thin and
 declaratively described, so that adopting a new TB CE version is a
 reapply-the-customization-set exercise, not a re-implementation.
 
@@ -176,9 +210,11 @@ reapply-the-customization-set exercise, not a re-implementation.
 
 "Env-agnostic" is only a real property if something mechanically stops
 a service from hard-coding a specific vendor SDK call. That mechanism
-does not exist yet for Java and is tracked as Risk 1, below -- this
-decision states the intent; it does not yet claim the guarantee is
-enforced.
+now exists for Java: Maven Enforcer `bannedDependencies` plus each
+service's own ArchUnit rules (ADR 0013 Decision 5), including
+vendor-SDK and persistence-provider denylists restored in the M9
+conformance follow-ups. Per-adapter allow-lists for real adapters are
+defined in `XXXX-proposed-hexagonal-conventions.md` (see Risk 1).
 
 ### 4. Constitutional engineering rules (unchanged, now binding for Java too)
 
@@ -202,7 +238,8 @@ existing contract, verbatim in spirit:
   approval. No claim of cloud/compliance/DR/migration completion based
   solely on local tests.
 - Multi-tenant: RBAC + ABAC + mTLS/JWT/SSO (Decision 5). Tenant-admin
-  grants access and creates operator roles; sys-admin opens SSH
+  grants access and creates operator roles; sys-admin (the Tier 1
+  `PRODUCT_ADMIN` role) opens SSH
   channels via a bastion VM.
 - Pay-as-you-go metering is cross-cutting and always-on; optional
   monetization subscribes to already-finalized usage events and never
@@ -225,7 +262,8 @@ tier, deployment profile) where a role alone is too coarse. Service-to-
 service traffic is authenticated via mTLS through the Istio mesh;
 external/edge identity is JWT/SSO, validated at the APISIX edge before
 a request ever reaches a Spring service. Tenant-admin accounts scope
-and grant operator-level roles within their own tenant; sys-admin,
+and grant operator-level roles within their own tenant; sys-admin (the
+Tier 1 `PRODUCT_ADMIN` role),
 lower-level access is only ever reached through a bastion VM's SSH
 channel, never directly.
 
@@ -277,7 +315,7 @@ friction, and that requirement is now binding, not aspirational:
   CE itself.
 - **External-over-internal, by default.** Wherever a behavior *can*
   live outside TB CE and talk to it over its own API/event surface
-  (gRPC integrations, its REST API, its own Kafka-facing rule nodes),
+  (its REST API, its own Kafka-facing rule nodes),
   it does -- it is built as one of the `services/*` Spring
   applications, not as more TB CE-internal logic. A behavior only
   becomes TB CE-internal customization when it must run in TB CE's own
@@ -376,12 +414,12 @@ supports the Java transition. Its lasting value, to be ported
   correction (never a raw edit), and a single default-off flag-
   resolution function as the only gate.
 - Most importantly, **the mechanical isolation-gate discipline itself**
-  (`scripts/check.py`) -- a Java-native equivalent (ArchUnit, Risk 1)
+  (`spec/scripts/check.py`) -- a Java-native equivalent (ArchUnit, Risk 1)
   must exist before the Java platform can claim the same guarantees
   the Python spec already proved out; dropping this discipline when
   the language changes would be a real regression, not a simplification.
 
-`scripts/check.py` and the Python test suite remain in this repository,
+`spec/scripts/check.py` and the Python test suite remain in this repository,
 continuing to pass, as living, executable documentation. They are not
 deleted. They stop being "the gate that blocks platform progress" once
 a Java-native gate (Decision 3/Risk 1) exists, but they keep gating
@@ -394,10 +432,10 @@ their own content indefinitely.
   deployment tooling; a more conventional stack for enterprise Java
   hiring and onboarding; a TB CE upgrade path that is a config-reapply
   exercise rather than a fork-merge exercise (Decision 8).
-- **Harder**: the Python isolation-gate discipline has no drop-in Java
-  equivalent yet -- it must be rebuilt with ArchUnit and build-tool
-  conventions before the Java platform can claim the same mechanical
-  guarantees (Risk 1). Two platform languages (Java + Python-for-RAG)
+- **Harder**: the Python isolation-gate discipline had no drop-in Java
+  equivalent; it has since been rebuilt with ArchUnit and Maven Enforcer
+  (ADR 0013 Decision 5), and must be kept at parity as services are
+  added (Risk 1). Two platform languages (Java + Python-for-RAG)
   raise correlation-ID propagation, schema-contract sharing, and CI
   complexity (Risk 2). A declarative TB CE customization manifest and a
   validated `cfg.yaml` schema are both new artifacts this repository
@@ -405,8 +443,8 @@ their own content indefinitely.
 - **To revisit**: whether Python's RAG/adapters boundary needs its own
   mechanical isolation gate (ArchUnit has no reach into a separate
   Python service); the final `cfg.yaml` schema and where the TB CE
-  customization manifest lives; this ADR's own final numbering once
-  branches are reconciled (see Numbering note).
+  customization manifest lives. (This ADR's numbering is resolved: 0011
+  is final; see Numbering note.)
 
 ## M0-M8 -> Java/Spring mapping
 
@@ -461,7 +499,6 @@ iot-ee/
 │                                     # RBAC/ABAC primitives, cfg.yaml schema, ArchUnit base rules
 ├── tb-extensions/
 │   ├── rule-nodes/                  # custom TbNode / @RuleNode implementations
-│   ├── integrations/                # custom AbstractIntegration implementations (gRPC)
 │   └── manifest.yaml                # declarative customization set -- Decision 8's upgrade contract
 ├── services/
 │   ├── identity/                    # tenant, RBAC/ABAC, SSO/JWT validation support
@@ -513,7 +550,10 @@ Notes:
 
 ## Risks and open questions
 
-1. **Env-agnostic boundary enforcement in Java has no mechanism yet.**
+1. **Env-agnostic boundary enforcement in Java (resolved).** Status:
+   resolved by ADR 0013 Decision 5 (Maven Enforcer + per-service ArchUnit
+   rules); the `common/` placement proposed below is superseded (see the
+   Status pointers). Original text follows.
    Proposed: ArchUnit rules in `common/src/test`, one rule per boundary
    (e.g. "no class outside `adapters..` may depend on
    `software.amazon.awssdk..`"), run as a required step in every
@@ -573,7 +613,8 @@ Notes:
 7. **TB CE version and license are not confirmed.** This ADR assumes
    "ThingsBoard CE" generically; the actual version (and Apache 2.0
    licensing terms for the extension points this ADR relies on --
-   `TbNode`/`AbstractIntegration`) has not been pinned against a
+   `TbNode`/`@RuleNode`; `AbstractIntegration` was since found to be
+   PE/Cloud-only by `docs/tb-ce-inventory.md` section 2.2) has not been pinned against a
    specific release, which matters for API stability of Decision 8's
    whole upgrade strategy.
 8. **Kafka-as-backbone vs. evidence-as-compliance-record is a subtlety
@@ -613,9 +654,8 @@ Notes:
   `tb-extensions/manifest.yaml` should physically live and how it is
   versioned (Decision 8) -- a representative shape is given here, not a
   final one.
-- Explicit confirmation of this ADR's final numbering once the
-  M8-graduation branch (`docs/adr/0010-worm-s3-adapter-graduation.md`,
-  currently unmerged) is either merged or dropped (see Numbering note).
+- (Resolved.) This ADR's final numbering: ADR 0010 merged to `main`,
+  and 0011 is final (see Numbering note).
 
 ## Non-goals (this ADR does not do)
 
