@@ -76,11 +76,13 @@ Progress against section 4:
 | C3-C7 | Not started |
 
 Outside the C-step sequence:
-- Private-cloud IaC skeleton (`deploy/`) merged in PR #23 (`21c325f`), with
-  its ADR still in draft (`XXXX-proposed-private-cloud-infrastructure.md`).
-  It covers the private-cloud part of section 2.2's edge-to-cloud gap.
-- Flink and Elasticsearch version management (`780fd66`) is not yet on
-  `main`.
+- Private-cloud IaC (`deploy/`) merged in PR #23 (`21c325f`), then re-laid
+  out in layers: Layer 0 `deploy/00-infra/private-hyperv` (single Hyper-V
+  host, NAT switch, 1 control plane + 2 workers) replaces
+  `deploy/provisioning`. The ADR is still in draft
+  (`XXXX-proposed-private-cloud-infrastructure.md`). It covers the
+  private-cloud part of section 2.2's edge-to-cloud gap.
+- Flink and Elasticsearch version management merged in PR #24 (`f04851c`).
 
 ## 4. Execution steps
 

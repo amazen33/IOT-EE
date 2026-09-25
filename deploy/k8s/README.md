@@ -14,10 +14,11 @@ Cluster API provider, and none exists for Hyper-V. Rather than ship an
 autoscaler that cannot create a VM, node count is declared in Git:
 
 1. Add (or remove) an entry in the `nodes` map of
-   `deploy/provisioning/terraform/terraform.tfvars`, in a PR.
-2. After review, `tofu apply` creates (or deletes) the VM and regenerates the
-   Ansible inventory.
-3. `ansible-playbook playbooks/bootstrap.yml --limit <new-node>` joins it.
+   `deploy/00-infra/private-hyperv/terraform.tfvars`, in a PR.
+2. After review, `tofu apply` creates (or deletes) the VM; re-export the
+   inventory from its `ansible_inventory` output.
+3. `ansible-playbook playbooks/bootstrap.yml --limit rke2-worker-03` (the new
+   node's name) joins it.
 
 Removing a node: drain it first (`playbooks/heal.yml -e heal_action=drain`),
 then remove its entry. Every apply stays a human-approved step, per the

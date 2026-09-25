@@ -82,5 +82,5 @@
         msg:
           - "1. Drain: ansible-playbook playbooks/heal.yml --limit {{ inventory_hostname }} -e heal_action=drain -e heal_confirm=yes"
           - "2. Remove from Kubernetes (for a server this also removes its etcd member): kubectl delete node {{ inventory_hostname }}"
-          - "3. Rebuild the VM: cd deploy/provisioning/terraform && tofu apply -replace='module.{{ hyperv_host | default('<host>') }}_nodes[\"{{ inventory_hostname }}\"].hyperv_vhd.os' -replace='module.{{ hyperv_host | default('<host>') }}_nodes[\"{{ inventory_hostname }}\"].hyperv_machine_instance.this'"
+          - "3. Rebuild the VM (fresh OS and data disks): tofu -chdir=deploy/00-infra/private-hyperv apply -replace='hyperv_vhd.os[\"{{ inventory_hostname }}\"]' -replace='hyperv_vhd.data[\"{{ inventory_hostname }}\"]' -replace='hyperv_machine_instance.vm[\"{{ inventory_hostname }}\"]'"
           - "4. Re-join: ssh-keyscan the new host key, then ansible-playbook playbooks/bootstrap.yml --limit {{ inventory_hostname }}"

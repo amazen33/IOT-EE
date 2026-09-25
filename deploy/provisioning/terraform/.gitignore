@@ -1,6 +1,0 @@
-# Per-node cloud-init seed zips built during plan/apply.
-.seed/
-# Real variable values (hosts, IPs, keys) stay local; commit only the example.
-terraform.tfvars
-*.auto.tfvars
-crash.log

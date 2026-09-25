@@ -12,9 +12,12 @@ rke2_version: "v1.35.7+rke2r1"
 # Losing it means new nodes cannot join and etcd snapshots cannot be restored.
 rke2_token: "{{ lookup('ansible.builtin.env', 'RKE2_TOKEN') }}"
 
-# Control-plane virtual IP held by kube-vip. Must be a free address in the
-# node subnet, outside the DHCP range, and not in kube_vip_lb_range.
-rke2_api_vip: "192.168.1.20"
+# Control-plane virtual IP held by kube-vip: a free address in Layer 0's VM
+# subnet (network.cidr, 10.20.0.0/24 by default), not a node address and not
+# in the LoadBalancer pool (deploy/k8s/kube-vip/kubevip-address-pool.yaml).
+# With one control-plane node it simply follows that node; it lets the
+# cluster grow to 3 control-plane nodes without re-pointing any client.
+rke2_api_vip: "10.20.0.5"
 # Optional DNS name for the API; added to the API server certificate.
 rke2_api_fqdn: ""
 
@@ -29,3 +32,6 @@ kube_vip_interface: "eth0"
 # ----- Outputs ---------------------------------------------------------------
 # Admin kubeconfig fetched after bootstrap (git-ignored).
 kubeconfig_output_dir: "{{ playbook_dir }}/../.kube"
+
+# Name used for the kubeconfig file above.
+cluster_name: "iotee-pc"

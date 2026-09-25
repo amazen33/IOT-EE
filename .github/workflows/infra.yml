@@ -15,7 +15,7 @@ jobs:
     timeout-minutes: 10
     defaults:
       run:
-        working-directory: deploy/provisioning/terraform
+        working-directory: deploy/00-infra/private-hyperv
     steps:
       - uses: actions/checkout@v5
       - uses: opentofu/setup-opentofu@v1
@@ -46,11 +46,11 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v5
-      - name: Parse the Hyper-V host scripts
+      - name: Parse the Hyper-V host prep script
         shell: pwsh
         run: |
           $failed = $false
-          Get-ChildItem deploy/provisioning/hyperv-host/*.ps1 | ForEach-Object {
+          Get-ChildItem deploy/00-infra/private-hyperv/scripts/*.ps1 | ForEach-Object {
             $errors = $null
             [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$null, [ref]$errors) | Out-Null
             if ($errors) { $failed = $true; $errors | ForEach-Object { Write-Host "::error file=$($_.Extent.File),line=$($_.Extent.StartLineNumber)::$($_.Message)" } }
