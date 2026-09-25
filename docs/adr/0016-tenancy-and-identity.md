@@ -1,12 +1,12 @@
-# ADR XXXX (proposed) -- Tenancy and identity: pooled tenant_id + Postgres RLS; IAM-agnostic OIDC; 2-tier RBAC
+# ADR 0016 -- Tenancy and identity: pooled tenant_id + Postgres RLS; IAM-agnostic OIDC; 2-tier RBAC
 
-Status: proposed -- encodes decisions ratified by the repository owner
-on 2026-09-24. Unnumbered draft per `docs/adr/README.md`; the number is
-assigned at merge. Refines ADR 0011 Decision 5 (multi-tenancy and
+Status: accepted -- encodes decisions ratified by the repository owner
+on 2026-09-24. Numbered at merge per
+`docs/adr/README.md`. Refines ADR 0011 Decision 5 (multi-tenancy and
 security model); supersedes the "multi-tenant by schema" wording in the
 project brief, which no merged ADR had adopted.
 
-Related drafts in this set: `0015-observability-authority.md`,
+Related ADRs in this set: `0015-observability-authority.md`,
 `0017-hexagonal-conventions.md`,
 `0018-events-and-metering.md`,
 `0019-streaming-and-rag.md`.

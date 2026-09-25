@@ -1,11 +1,11 @@
-# ADR XXXX (proposed) -- Streaming and RAG: Flink as semantic synthesizer, pgvector in production, never on the edge
+# ADR 0019 -- Streaming and RAG: Flink as semantic synthesizer, pgvector in production, never on the edge
 
-Status: proposed -- encodes decisions ratified by the repository owner
-on 2026-09-24. Unnumbered draft per `docs/adr/README.md`; the number is
-assigned at merge. Adds a streaming stage in front of the RAG subsystem
+Status: accepted -- encodes decisions ratified by the repository owner
+on 2026-09-24. Numbered at merge per
+`docs/adr/README.md`. Adds a streaming stage in front of the RAG subsystem
 that ADR 0011 Decision 1 scopes to Python.
 
-Related drafts in this set: `0015-observability-authority.md`,
+Related ADRs in this set: `0015-observability-authority.md`,
 `0016-tenancy-and-identity.md`,
 `0017-hexagonal-conventions.md`,
 `0018-events-and-metering.md`.
@@ -67,10 +67,10 @@ processing runs, or which vector store is production.
 - Flink is JVM-based, so jobs are written in Java, consistent with ADR
   0011 Decision 1. The RAG agent itself remains in the Python scope.
 - Flink jobs and the Kafka→AI-cluster mirror are broker-specific; the
-  Redpanda conformance target in the events draft covers the platform's
+  Redpanda conformance target in ADR 0018 covers the platform's
   own messaging adapters, not Flink connectors.
 - The RAG path is read-only with respect to financial correctness:
-  it does not feed billing (project instruction; events draft).
+  it does not feed billing (project instruction; ADR 0018).
 
 ## Open items (not decided here)
 

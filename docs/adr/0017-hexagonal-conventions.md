@@ -1,11 +1,11 @@
-# ADR XXXX (proposed) -- Hexagonal conventions: ports, adapters, dual transport, per-adapter vendor bans
+# ADR 0017 -- Hexagonal conventions: ports, adapters, dual transport, per-adapter vendor bans
 
-Status: proposed -- encodes decisions ratified by the repository owner
-on 2026-09-24. Unnumbered draft per `docs/adr/README.md`; the number is
-assigned at merge. Makes ADR 0011 Decision 3's "must stay swappable"
+Status: accepted -- encodes decisions ratified by the repository owner
+on 2026-09-24. Numbered at merge per
+`docs/adr/README.md`. Makes ADR 0011 Decision 3's "must stay swappable"
 intent concrete per service, within ADR 0013's autonomy rule.
 
-Related drafts in this set: `0015-observability-authority.md`,
+Related ADRs in this set: `0015-observability-authority.md`,
 `0016-tenancy-and-identity.md`,
 `0018-events-and-metering.md`,
 `0019-streaming-and-rag.md`.
