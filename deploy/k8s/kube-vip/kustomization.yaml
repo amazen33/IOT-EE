@@ -1,9 +1,13 @@
-# kube-vip-cloud-provider: assigns addresses to Services of type LoadBalancer
-# from the pool below; the kube-vip static pods on the servers (deployed by
-# Ansible, deploy/configuration/roles/kube_vip) then announce them on the LAN.
-# Pinned to the v0.0.12 release manifest (checked 2026-09-25), never "main".
+# LoadBalancer Services on the private Hyper-V cluster:
+#  - kube-vip-cloud-provider assigns each Service an address from the pool in
+#    kubevip-address-pool.yaml;
+#  - the kube-vip DaemonSet (services-only mode) announces it on the VM network.
+# Pinned to the v0.0.12 cloud-provider release manifest (checked 2026-09-25),
+# never "main".
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - https://raw.githubusercontent.com/kube-vip/kube-vip-cloud-provider/v0.0.12/manifest/kube-vip-cloud-controller.yaml
+  - kube-vip-rbac.yaml
+  - kube-vip-daemonset.yaml
   - kubevip-address-pool.yaml

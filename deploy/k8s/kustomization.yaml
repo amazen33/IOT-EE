@@ -1,5 +1,5 @@
-# Cluster add-ons applied after Ansible bootstrap:
-#   kubectl --kubeconfig ../configuration/.kube/iotee-pc.yaml apply -k .
+# Layer 2: cluster add-ons applied after the Layer 1 engine is up:
+#   kubectl apply -k deploy/k8s
 # Argo CD will take over applying this directory once it is installed.
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization

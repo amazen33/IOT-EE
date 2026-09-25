@@ -1,0 +1,80 @@
+---
+- name: Only Ubuntu 22.04+ is supported
+  ansible.builtin.assert:
+    that:
+      - ansible_facts['distribution'] == 'Ubuntu'
+      - ansible_facts['distribution_version'] is version('22.04', '>=')
+    fail_msg: "Unsupported OS {{ ansible_facts['distribution'] }} {{ ansible_facts['distribution_version'] }}"
+
+- name: Wait for cloud-init to finish its first boot
+  ansible.builtin.command: cloud-init status --wait
+  changed_when: false
+
+- name: Base packages
+  ansible.builtin.apt:
+    name: [curl, ca-certificates, tar]
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+# ----- Kernel modules --------------------------------------------------------
+- name: Load kernel modules at boot
+  ansible.builtin.copy:
+    dest: /etc/modules-load.d/rke2.conf
+    content: |
+      # Managed by Ansible (deploy/01-k8s-engine/rke2-ansible, role os_prep)
+      {% for module in os_prep_kernel_modules %}
+      {{ module }}
+      {% endfor %}
+    owner: root
+    group: root
+    mode: "0644"
+
+- name: Read loaded kernel modules
+  ansible.builtin.slurp:
+    src: /proc/modules
+  register: os_prep_proc_modules
+
+- name: Load missing kernel modules now
+  ansible.builtin.command: "modprobe {{ item }}"
+  loop: "{{ os_prep_kernel_modules }}"
+  when: >-
+    not (os_prep_proc_modules.content | b64decode
+         | regex_search('^' ~ item ~ '\s', multiline=True))
+  changed_when: true
+
+# ----- sysctl ----------------------------------------------------------------
+- name: Kubernetes and CIS kernel settings
+  ansible.builtin.copy:
+    dest: /etc/sysctl.d/90-rke2.conf
+    content: |
+      # Managed by Ansible (deploy/01-k8s-engine/rke2-ansible, role os_prep)
+      {% for key, value in os_prep_sysctl.items() %}
+      {{ key }} = {{ value }}
+      {% endfor %}
+    owner: root
+    group: root
+    mode: "0644"
+  notify: Apply sysctl
+
+- name: Apply sysctl before RKE2 starts
+  ansible.builtin.meta: flush_handlers
+
+# ----- Swap ------------------------------------------------------------------
+- name: Turn swap off now (kubelet requirement)
+  ansible.builtin.command: swapoff -a
+  when: ansible_facts['swaptotal_mb'] | int > 0
+  changed_when: true
+
+- name: Keep swap off after reboot
+  ansible.builtin.replace:
+    path: /etc/fstab
+    regexp: '^([^#].*\sswap\s.*)$'
+    replace: '# \1'
+
+# ----- Time ------------------------------------------------------------------
+- name: Keep time in sync (etcd and TLS depend on it)
+  ansible.builtin.systemd_service:
+    name: systemd-timesyncd
+    enabled: true
+    state: started

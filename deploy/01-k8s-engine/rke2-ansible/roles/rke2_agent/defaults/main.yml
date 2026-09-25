@@ -1,0 +1,11 @@
+---
+rke2_install_script_url: "https://get.rke2.io"
+
+# Agents register with the first server's supervisor port.
+rke2_server_first: "{{ groups['rke2_server'][0] }}"
+rke2_server_join_url: "https://{{ hostvars[rke2_server_first]['rke2_node_ip'] }}:9345"
+
+# Node token extracted by the rke2_server role on the first server
+# (K10<CA hash>::server:<secret>): the CA hash lets the agent verify it is
+# joining the right cluster before sending the secret.
+rke2_agent_token: "{{ hostvars[rke2_server_first]['rke2_node_token'] | default('') }}"

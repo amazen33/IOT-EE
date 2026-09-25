@@ -1,0 +1,175 @@
+---
+# ----- CIS prerequisite: etcd user -------------------------------------------
+# With profile "cis", RKE2 runs etcd as this unprivileged user and refuses to
+# start the server if it does not exist.
+- name: CIS etcd group
+  ansible.builtin.group:
+    name: etcd
+    system: true
+    state: present
+
+- name: CIS etcd user
+  ansible.builtin.user:
+    name: etcd
+    group: etcd
+    system: true
+    create_home: false
+    home: /var/lib/rancher/rke2/server/db
+    shell: /sbin/nologin
+    comment: "etcd user for RKE2 CIS profile"
+    state: present
+
+# ----- Install ---------------------------------------------------------------
+- name: Read the installed RKE2 version, if any
+  ansible.builtin.command: /usr/local/bin/rke2 --version
+  register: rke2_installed_version
+  changed_when: false
+  ignore_errors: true
+
+- name: Decide whether to install
+  ansible.builtin.set_fact:
+    rke2_needs_install: >-
+      {{ rke2_installed_version is failed
+         or (rke2_version not in rke2_installed_version.stdout | default('')) }}
+
+- name: Download the RKE2 install script
+  ansible.builtin.get_url:
+    url: "{{ rke2_install_script_url }}"
+    dest: /usr/local/sbin/rke2-install.sh
+    owner: root
+    group: root
+    mode: "0700"
+    force: true
+  when: rke2_needs_install
+
+- name: Install RKE2 server {{ rke2_version }}
+  # The script downloads the release tarball and verifies it against the
+  # release's sha256 checksum file before installing. RKE2 ships its own
+  # containerd, so no separate container runtime is installed.
+  ansible.builtin.command: /usr/local/sbin/rke2-install.sh
+  environment:
+    INSTALL_RKE2_VERSION: "{{ rke2_version }}"
+    INSTALL_RKE2_TYPE: server
+  when: rke2_needs_install
+  changed_when: true
+  notify: Restart rke2-server
+
+# ----- Configure: CIS profile, PSS, secrets encryption -----------------------
+- name: RKE2 config directory
+  ansible.builtin.file:
+    path: /etc/rancher/rke2
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: Pod Security Standards admission configuration
+  ansible.builtin.template:
+    src: rke2-pss.yaml.j2
+    dest: /etc/rancher/rke2/rke2-pss.yaml
+    owner: root
+    group: root
+    mode: "0600"
+  notify: Restart rke2-server
+
+- name: RKE2 server configuration
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: /etc/rancher/rke2/config.yaml
+    owner: root
+    group: root
+    mode: "0600"
+  notify: Restart rke2-server
+  no_log: true   # rendered content includes the cluster token
+
+- name: Enable and start rke2-server
+  ansible.builtin.systemd_service:
+    name: rke2-server
+    enabled: true
+    state: started
+
+- name: Apply pending config changes before checking the node
+  ansible.builtin.meta: flush_handlers
+
+# ----- Verify ----------------------------------------------------------------
+- name: Wait for this node to report Ready
+  ansible.builtin.command: >-
+    /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml
+    get node {{ inventory_hostname }}
+    -o 'jsonpath={.status.conditions[?(@.type=="Ready")].status}'
+  register: rke2_ready
+  until: rke2_ready.stdout == "True"
+  retries: 60
+  delay: 10
+  changed_when: false
+
+- name: Read secrets-encryption status
+  ansible.builtin.command: /usr/local/bin/rke2 secrets-encrypt status
+  register: rke2_secrets_encrypt
+  changed_when: false
+
+- name: Assert secrets are encrypted at rest
+  ansible.builtin.assert:
+    that: "'Encryption Status: Enabled' in rke2_secrets_encrypt.stdout"
+    fail_msg: "Secrets encryption is not enabled: {{ rke2_secrets_encrypt.stdout }}"
+    quiet: true
+
+- name: Read the Pod Security configuration the API server is using
+  ansible.builtin.command: >-
+    /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml
+    -n kube-system get pod kube-apiserver-{{ inventory_hostname }}
+    -o 'jsonpath={.spec.containers[0].command} {.spec.containers[0].args}'
+  register: rke2_apiserver_args
+  changed_when: false
+
+- name: Assert the API server has the Pod Security admission config
+  ansible.builtin.assert:
+    that: "'admission-control-config-file' in rke2_apiserver_args.stdout"
+    fail_msg: "kube-apiserver is running without an admission control config file."
+    quiet: true
+
+# ----- Node token for agents and additional servers ---------------------------
+- name: Extract the node token from the first server
+  when: inventory_hostname == rke2_server_first
+  block:
+    - name: Read /var/lib/rancher/rke2/server/node-token
+      ansible.builtin.slurp:
+        src: /var/lib/rancher/rke2/server/node-token
+      register: rke2_node_token_file
+      no_log: true
+
+    - name: Publish the node token to the agents' play (in memory only)
+      ansible.builtin.set_fact:
+        rke2_node_token: "{{ rke2_node_token_file.content | b64decode | trim }}"
+      no_log: true
+
+# ----- Admin kubeconfig on the Ansible controller -----------------------------
+- name: Export the admin kubeconfig to {{ rke2_kubeconfig_dest }}
+  when: inventory_hostname == rke2_server_first
+  block:
+    - name: Read /etc/rancher/rke2/rke2.yaml
+      ansible.builtin.slurp:
+        src: /etc/rancher/rke2/rke2.yaml
+      register: rke2_kubeconfig
+      no_log: true
+
+    - name: Kubeconfig directory on the controller
+      ansible.builtin.file:
+        path: "{{ rke2_kubeconfig_dest | expanduser | dirname }}"
+        state: directory
+        mode: "0700"
+      delegate_to: localhost
+      become: false
+
+    - name: Write the kubeconfig (server URL -> node IP, context -> {{ cluster_name }})
+      ansible.builtin.copy:
+        content: >-
+          {{ rke2_kubeconfig.content | b64decode
+             | replace('https://127.0.0.1:6443', 'https://' ~ rke2_node_ip ~ ':6443')
+             | regex_replace('(?m)^(\s*(- )?(name|cluster|user|current-context): )default$', '\g<1>' ~ cluster_name) }}
+        dest: "{{ rke2_kubeconfig_dest | expanduser }}"
+        mode: "0600"
+        backup: true
+      delegate_to: localhost
+      become: false
+      no_log: true

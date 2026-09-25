@@ -1,0 +1,36 @@
+# Managed by Ansible (deploy/01-k8s-engine/rke2-ansible, role rke2_server).
+# Contains the cluster token: mode 0600, root only.
+
+# ----- CIS hardening ---------------------------------------------------------
+# Enables RKE2's CIS Kubernetes Benchmark profile: kubelet
+# protect-kernel-defaults, etcd run as the unprivileged "etcd" user, API
+# server audit logging, restricted Pod Security Admission cluster-wide, and
+# default-deny NetworkPolicies in the system namespaces.
+profile: "cis"
+# Pod Security Standards: "restricted" enforced everywhere except the system
+# namespaces listed in this file (rendered from rke2-pss.yaml.j2).
+pod-security-admission-config-file: /etc/rancher/rke2/rke2-pss.yaml
+
+# ----- Secrets encryption at rest --------------------------------------------
+# Kubernetes Secrets are encrypted in etcd (aescbc). Verified by the role with
+# `rke2 secrets-encrypt status`.
+secrets-encryption: true
+
+# ----- Identity / networking -------------------------------------------------
+token: "{{ rke2_token }}"
+{% if inventory_hostname != rke2_server_first %}
+server: "{{ rke2_server_join_url }}"
+{% endif %}
+node-name: "{{ inventory_hostname }}"
+node-ip: "{{ rke2_node_ip }}"
+advertise-address: "{{ rke2_node_ip }}"
+tls-san:
+  - "{{ rke2_node_ip }}"
+{% for san in rke2_tls_san %}
+  - "{{ san }}"
+{% endfor %}
+write-kubeconfig-mode: "0600"
+{% if rke2_server_taint | bool %}
+node-taint:
+  - "CriticalAddonsOnly=true:NoExecute"
+{% endif %}
