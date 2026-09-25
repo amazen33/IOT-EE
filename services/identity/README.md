@@ -215,11 +215,19 @@ those items as closed, exactly as it was before CI run #84 existed.
 
 ### Track C step C1 (hexagonal skeleton + gRPC adapter)
 
-Status: **blocked locally, not passed.** Maven Central
-(`repo.maven.apache.org`) is unreachable from every environment this
-step was authored in (HTTP 403 from the egress proxy), so
-`mvn -f pom.xml verify` has not run against the step C1 changes. What
-WAS checked during authoring (2026-09-25):
+Status: **passed in CI.** CI run #103
+(https://github.com/amazen33/IOT-EE/actions/runs/36109849592) on commit
+`878f568` (branch `feature/c1-hexagonal-skeleton`) passed the workflow
+"Platform gates: Python spec + Java platform": `mvn -B -f pom.xml verify`
+compiled the gRPC adapter and generated stubs and passed the ArchUnit
+hexagonal rules, the REST/gRPC equivalence suite and the wiring tests,
+alongside the Python gate. PR #21 merged that state to `main` at `8d95e3c`.
+This CI run is the authoritative signal. The authoring-time checks below
+predate it and are kept as history.
+
+Maven Central (`repo.maven.apache.org`) was unreachable from every
+environment this step was authored in (HTTP 403 from the egress proxy), so
+before CI the step was checked this way (2026-09-25):
 
 - **Contracts:** `contracts/identity/v1/tenant_permissions.proto` and
   `contracts/events/v1/envelope.proto` compile with the official protoc
@@ -257,6 +265,7 @@ WAS checked during authoring (2026-09-25):
 - **Python gate:** `python spec/scripts/check.py` -- 437 tests, OK
   (1 skipped, the unchanged live-S3 test); `spec/` untouched.
 
-The first real compile-and-test run of the Spring and gRPC adapters,
-the ArchUnit rules, and the equivalence suite is the CI run on this
-branch. Treat step C1 as open until that run is green.
+CI run #103 (above) was the first real compile-and-test run of the Spring
+and gRPC adapters, the ArchUnit rules and the equivalence suite; step C1 is
+closed. Anything added to this module after `8d95e3c` needs its own CI run
+before it is treated as verified.
