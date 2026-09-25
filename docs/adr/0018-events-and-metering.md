@@ -1,12 +1,12 @@
-# ADR XXXX (proposed) -- Events and metering: transactional outbox, idempotent consumers, usage-event v1, broker-swap contract, payment port
+# ADR 0018 -- Events and metering: transactional outbox, idempotent consumers, usage-event v1, broker-swap contract, payment port
 
-Status: proposed -- encodes decisions ratified by the repository owner
-on 2026-09-24. Unnumbered draft per `docs/adr/README.md`; the number is
-assigned at merge. Implements ADR 0011 Decision 6 (pay-as-you-go
+Status: accepted -- encodes decisions ratified by the repository owner
+on 2026-09-24. Numbered at merge per
+`docs/adr/README.md`. Implements ADR 0011 Decision 6 (pay-as-you-go
 metering, optional monetization) in the Java platform; scopes, without
 overriding, ADR 0011's M3 mapping row (see "Conflicts with ADR 0011").
 
-Related drafts in this set: `0015-observability-authority.md`,
+Related ADRs in this set: `0015-observability-authority.md`,
 `0016-tenancy-and-identity.md`,
 `0017-hexagonal-conventions.md`,
 `0019-streaming-and-rag.md`.
@@ -70,7 +70,7 @@ Kafka as replaceable (Redpanda) and payments (Stripe) as behind a port.
 - Billing correctness depends on dedupe by `idempotency_key`, not on
   broker guarantees. A billed unit exists only once per key, however
   many deliveries occur.
-- Payment-provider egress must strip OTel baggage (observability draft).
+- Payment-provider egress must strip OTel baggage (ADR 0015).
 - Nothing in this ADR puts AI or the RAG path into financial
   correctness (project instruction); `0019-streaming-and-rag.md`
   consumes usage events read-only if at all.

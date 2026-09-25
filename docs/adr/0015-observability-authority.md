@@ -1,13 +1,13 @@
-# ADR XXXX (proposed) -- Observability authority: LGTM is the enterprise trace/log plane; dual-ID propagation
+# ADR 0015 -- Observability authority: LGTM is the enterprise trace/log plane; dual-ID propagation
 
-Status: proposed -- encodes a decision ratified by the repository owner
-on 2026-09-24. Unnumbered draft per `docs/adr/README.md`; the number is
-assigned at merge. On merge, this ADR supersedes the "Observability"
+Status: accepted -- encodes a decision ratified by the repository owner
+on 2026-09-24. Numbered at merge per
+`docs/adr/README.md`. This ADR supersedes the "Observability"
 bullet of ADR 0011 Decision 3 insofar as that bullet
 calls LGTM "complementary to, not a replacement for" TB CE's built-in
 monitoring.
 
-Related drafts in this set: `0016-tenancy-and-identity.md`,
+Related ADRs in this set: `0016-tenancy-and-identity.md`,
 `0017-hexagonal-conventions.md`,
 `0018-events-and-metering.md`,
 `0019-streaming-and-rag.md`.
