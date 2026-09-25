@@ -1,0 +1,3 @@
+# Written by deploy/provisioning/terraform (local_file.ansible_inventory).
+*
+!.gitignore

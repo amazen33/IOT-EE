@@ -1,0 +1,71 @@
+name: "Infrastructure gate: deploy/"
+on:
+  push:
+    paths: ["deploy/**", ".github/workflows/infra.yml"]
+  pull_request:
+    paths: ["deploy/**", ".github/workflows/infra.yml"]
+permissions:
+  contents: read
+# Static checks only. Nothing here can reach the Hyper-V hosts or change
+# infrastructure: `tofu apply` and the Ansible playbooks are run by a human
+# (development contract: no infrastructure action without explicit approval).
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: deploy/provisioning/terraform
+    steps:
+      - uses: actions/checkout@v5
+      - uses: opentofu/setup-opentofu@v1
+      - run: tofu fmt -check -recursive -diff
+      - run: tofu init -backend=false -input=false
+      - run: tofu validate
+
+  ansible:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: deploy/configuration
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - run: python -m pip install ansible-core
+      - name: Syntax-check every playbook against the example inventory
+        run: |
+          for pb in playbooks/*.yml; do
+            ansible-playbook --syntax-check -i inventory/hosts.example.yml "$pb"
+          done
+
+  powershell:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - name: Parse the Hyper-V host scripts
+        shell: pwsh
+        run: |
+          $failed = $false
+          Get-ChildItem deploy/provisioning/hyperv-host/*.ps1 | ForEach-Object {
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$null, [ref]$errors) | Out-Null
+            if ($errors) { $failed = $true; $errors | ForEach-Object { Write-Host "::error file=$($_.Extent.File),line=$($_.Extent.StartLineNumber)::$($_.Message)" } }
+            else { Write-Host "OK $($_.Name)" }
+          }
+          if ($failed) { exit 1 }
+
+  kubernetes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install kubeconform
+        run: |
+          curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.7.0/kubeconform-linux-amd64.tar.gz | tar xz kubeconform
+          sudo mv kubeconform /usr/local/bin/
+      - name: Render and validate the add-on manifests
+        run: kubectl kustomize deploy/k8s | kubeconform -strict -summary -

@@ -1,0 +1,86 @@
+---
+# Node remediation. Changes nothing unless heal_confirm=yes: the development
+# contract forbids infrastructure actions without explicit human approval.
+# Always target nodes explicitly with --limit.
+#
+#   Dry run (default): prints the plan
+#     ansible-playbook playbooks/heal.yml --limit rke2-agent-2 -e heal_action=restart
+#   Execute:
+#     ansible-playbook playbooks/heal.yml --limit rke2-agent-2 -e heal_action=restart -e heal_confirm=yes
+#
+# heal_action:
+#   restart  - restart the node's RKE2 service and wait for Ready
+#   drain    - cordon + drain the node (evicts its pods) before maintenance
+#   uncordon - return a drained node to service
+#   replace  - never automatic: prints the Terraform + Ansible steps to rebuild
+
+- name: Remediate
+  hosts: rke2_servers:rke2_agents
+  become: true
+  gather_facts: false
+  serial: 1            # one node at a time; never two etcd members at once
+  vars:
+    heal_action: ""
+    heal_confirm: "no"
+    heal_drain_timeout: "300s"
+    unit: "{{ 'rke2-server' if inventory_hostname in groups['rke2_servers'] else 'rke2-agent' }}"
+    # Run kubectl from a server other than the node being healed.
+    kubectl_on: "{{ groups['rke2_servers'] | difference([inventory_hostname]) | first | default(groups['rke2_servers'][0]) }}"
+    kubectl: /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml
+    confirmed: "{{ heal_confirm | string | lower in ['yes', 'true'] }}"
+  tasks:
+    - name: Require an explicit target and a known action
+      ansible.builtin.assert:
+        that:
+          - ansible_limit is defined
+          - heal_action in ['restart', 'drain', 'uncordon', 'replace']
+        fail_msg: >-
+          Pass --limit <node> and -e heal_action=restart|drain|uncordon|replace.
+      run_once: true
+
+    - name: Plan (dry run -- add -e heal_confirm=yes to execute)
+      ansible.builtin.debug:
+        msg: "Would {{ heal_action }} {{ inventory_hostname }} ({{ unit }}), using kubectl on {{ kubectl_on }}."
+      when: not confirmed and heal_action != 'replace'
+
+    - name: Restart the RKE2 service
+      when: confirmed and heal_action == 'restart'
+      block:
+        - name: Restart {{ unit }}
+          ansible.builtin.systemd_service:
+            name: "{{ unit }}"
+            state: restarted
+
+        - name: Wait for Ready
+          ansible.builtin.command: >-
+            {{ kubectl }} get node {{ inventory_hostname }}
+            -o 'jsonpath={.status.conditions[?(@.type=="Ready")].status}'
+          delegate_to: "{{ kubectl_on }}"
+          register: heal_ready
+          until: heal_ready.stdout == "True"
+          retries: 30
+          delay: 10
+          changed_when: false
+
+    - name: Cordon and drain
+      when: confirmed and heal_action == 'drain'
+      ansible.builtin.command: >-
+        {{ kubectl }} drain {{ inventory_hostname }}
+        --ignore-daemonsets --delete-emptydir-data --timeout={{ heal_drain_timeout }}
+      delegate_to: "{{ kubectl_on }}"
+      changed_when: true
+
+    - name: Uncordon
+      when: confirmed and heal_action == 'uncordon'
+      ansible.builtin.command: "{{ kubectl }} uncordon {{ inventory_hostname }}"
+      delegate_to: "{{ kubectl_on }}"
+      changed_when: true
+
+    - name: Replacement steps (manual, by design)
+      when: heal_action == 'replace'
+      ansible.builtin.debug:
+        msg:
+          - "1. Drain: ansible-playbook playbooks/heal.yml --limit {{ inventory_hostname }} -e heal_action=drain -e heal_confirm=yes"
+          - "2. Remove from Kubernetes (for a server this also removes its etcd member): kubectl delete node {{ inventory_hostname }}"
+          - "3. Rebuild the VM: cd deploy/provisioning/terraform && tofu apply -replace='module.{{ hyperv_host | default('<host>') }}_nodes[\"{{ inventory_hostname }}\"].hyperv_vhd.os' -replace='module.{{ hyperv_host | default('<host>') }}_nodes[\"{{ inventory_hostname }}\"].hyperv_machine_instance.this'"
+          - "4. Re-join: ssh-keyscan the new host key, then ansible-playbook playbooks/bootstrap.yml --limit {{ inventory_hostname }}"

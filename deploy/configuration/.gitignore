@@ -1,0 +1,3 @@
+# Local outputs of the playbooks; never committed.
+.kube/
+reports/
