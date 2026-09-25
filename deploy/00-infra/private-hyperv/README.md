@@ -95,11 +95,14 @@ read-only and never rebuilt in place. To roll a new one, pass
 `-TemplateName ubuntu-noble-base-v2.vhdx` and point `template_vhdx_path` at it.
 
 If `qemu-img.exe` isn't already on `PATH`, the script downloads QEMU for
-Windows, verifies it against its published SHA-512, and installs it silently
-to `scripts\tools\qemu\` (next to the script, not Program Files; git-ignored).
-Already have it elsewhere? Pass `-QemuImgPath <path>` to use that instead and
-skip the install. `-SkipQemuInstall` fails with instructions instead of
-downloading anything.
+Windows (qemu.weilnetz.de, linked from qemu.org/download) and installs it
+silently to `scripts\tools\qemu\` (next to the script, not Program Files;
+git-ignored). That build publishes no checksum, so this step is HTTPS-only,
+not hash-verified — the script prints the download's SHA-256 and Authenticode
+signature status so you can check it yourself. Already have `qemu-img.exe`
+from a source you trust? Pass `-QemuImgPath <path>` to use that instead and
+skip the download entirely. `-SkipQemuInstall` fails with instructions
+instead of downloading anything.
 
 ### 2. Configure
 

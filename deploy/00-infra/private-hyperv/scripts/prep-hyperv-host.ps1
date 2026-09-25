@@ -15,10 +15,11 @@
                       the Kubernetes API.
     3. Directories  - VM and template folders.
     4. qemu-img     - downloads QEMU for Windows (Stefan Weil's builds, linked
-                      from qemu.org/download), verifies it against the
-                      accompanying SHA-512 file, and installs it silently to
-                      -QemuInstallRoot. Skipped if qemu-img.exe is already on
-                      PATH or already at -QemuInstallRoot.
+                      from qemu.org/download; no checksum is published for
+                      them, so this is HTTPS-only, not hash-verified -- see
+                      the .PARAMETER QemuImgPath notes) and installs it
+                      silently to -QemuInstallRoot. Skipped if qemu-img.exe is
+                      already on PATH or already at -QemuInstallRoot.
     5. Template     - downloads the Ubuntu cloud image, verifies it against
                       Canonical's SHA256SUMS, converts it to VHDX with qemu-img,
                       grows it, and marks it read-only. VMs use it as the parent
@@ -36,7 +37,13 @@
 .PARAMETER QemuImgPath
   qemu-img.exe from QEMU for Windows. Needed only to build the template. If
   this parameter is not explicitly passed, it is resolved automatically: PATH,
-  then -QemuInstallRoot, installing there if neither has it (see -SkipQemuInstall).
+  then -QemuInstallRoot, installing there if neither has it (see
+  -SkipQemuInstall). That installer (qemu.weilnetz.de, linked from
+  qemu.org/download) publishes no checksum, so the download is HTTPS-only:
+  origin and transport integrity from TLS, no hash to verify the file's
+  contents against. Its SHA-256 and Authenticode signature status (if any)
+  are printed so you can compare them yourself. If you'd rather not trust
+  that, install QEMU yourself from a source you trust and pass -QemuImgPath.
 
 .PARAMETER QemuInstallRoot
   Where to silently install QEMU for Windows if qemu-img.exe isn't already on
@@ -251,29 +258,36 @@ else {
             $work = Join-Path $TemplateRoot '.download'
             New-Item -ItemType Directory -Path $work -Force | Out-Null
             $setupPath = Join-Path $work $setupName
-            $sumPath = "$setupPath.sha512"
 
             Write-Host "    downloading $setupUrl"
-            Invoke-WebRequest -Uri "$setupUrl.sha512" -OutFile $sumPath -UseBasicParsing
             Invoke-WebRequest -Uri $setupUrl -OutFile $setupPath -UseBasicParsing
 
-            # Third-party build (qemu.org links it, but does not sign or host
-            # it): verified against its own published SHA-512, same as the
-            # Ubuntu image below is verified against Canonical's SHA256SUMS.
-            $sumText = Get-Content -Raw -LiteralPath $sumPath
-            $sumMatch = [regex]::Match($sumText, '[0-9a-fA-F]{128}')
-            if (-not $sumMatch.Success) { throw "No SHA-512 hex string found in $sumPath." }
-            $expected = $sumMatch.Value.ToUpperInvariant()
-            $actual = (Get-FileHash -LiteralPath $setupPath -Algorithm SHA512).Hash
-            if ($actual -ne $expected) { throw "Checksum mismatch for ${setupName}: expected $expected, got $actual." }
-            Write-Host '    checksum OK'
+            # Stefan Weil's third-party build, linked from qemu.org's own
+            # download page, but qemu.org neither hosts nor signs it, and it
+            # publishes no checksum file (checked .sha512/.sha256/.sha1/
+            # SHA512SUMS/sha512sum.txt on 2026-09-25: all 404). Unlike the
+            # Ubuntu image below, there is nothing to verify this download
+            # against. Two informational-only checks instead of a real one:
+            # the installer's Authenticode signature (if any) and its hash,
+            # printed so you can compare against VirusTotal or a past run
+            # yourself. HTTPS still guarantees you got this from
+            # qemu.weilnetz.de unmodified in transit.
+            $sha256 = (Get-FileHash -LiteralPath $setupPath -Algorithm SHA256).Hash
+            Write-Host "    SHA-256: $sha256 (no vendor checksum exists to compare it against)"
+            $sig = Get-AuthenticodeSignature -LiteralPath $setupPath
+            if ($sig.Status -eq 'Valid') {
+                Write-Host "    Authenticode: Valid, signed by $($sig.SignerCertificate.Subject)"
+            }
+            else {
+                Write-Warning "Authenticode signature is $($sig.Status): $setupName is unsigned or its signature doesn't validate. Proceeding anyway (pass -SkipQemuInstall and install it yourself first if you'd rather not)."
+            }
 
             New-Item -ItemType Directory -Path $QemuInstallRoot -Force | Out-Null
             # NSIS silent install: /S silent, /D=dir sets the install directory
             # (must be the last argument, no quotes, no trailing backslash).
             $proc = Start-Process -FilePath $setupPath -ArgumentList @('/S', "/D=$QemuInstallRoot") -Wait -PassThru
             if ($proc.ExitCode -ne 0) { throw "QEMU installer exited with code $($proc.ExitCode)." }
-            Remove-Item -LiteralPath $setupPath, $sumPath -Force
+            Remove-Item -LiteralPath $setupPath -Force
 
             if (-not (Test-Path -LiteralPath $localInstall)) {
                 throw "Installed QEMU to $QemuInstallRoot but qemu-img.exe isn't there. Installer layout may have changed; check $QemuInstallRoot manually."
