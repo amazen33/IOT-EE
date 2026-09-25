@@ -1,0 +1,25 @@
+---
+# Turns Terraform-provisioned VMs into an RKE2 cluster. Idempotent: re-run it
+# after adding nodes to the Terraform node map, optionally with --limit.
+#   export RKE2_TOKEN=...            # same value for the life of the cluster
+#   ansible-playbook playbooks/bootstrap.yml
+
+- name: Prepare every node (OS settings shared by servers and agents)
+  hosts: rke2_servers:rke2_agents
+  become: true
+  roles:
+    - common
+
+- name: Control plane, one server at a time (etcd members must join serially)
+  hosts: rke2_servers
+  become: true
+  serial: 1
+  roles:
+    - kube_vip
+    - rke2_server
+
+- name: Workers
+  hosts: rke2_agents
+  become: true
+  roles:
+    - rke2_agent

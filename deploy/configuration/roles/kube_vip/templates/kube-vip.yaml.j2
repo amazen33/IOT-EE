@@ -1,0 +1,49 @@
+# Managed by Ansible (deploy/configuration/roles/kube_vip). Environment
+# variable names follow kube-vip's static-pod ARP example
+# (kube-vip.io/docs/installation/static).
+apiVersion: v1
+kind: Pod
+metadata:
+  name: kube-vip
+  namespace: kube-system
+spec:
+  hostNetwork: true
+  hostAliases:
+    - hostnames: [kubernetes]
+      ip: 127.0.0.1
+  containers:
+    - name: kube-vip
+      image: "ghcr.io/kube-vip/kube-vip:{{ kube_vip_version }}"
+      imagePullPolicy: IfNotPresent
+      args: [manager]
+      env:
+        - { name: vip_arp, value: "true" }
+        - { name: port, value: "6443" }
+        - { name: vip_interface, value: "{{ kube_vip_interface }}" }
+        - { name: vip_subnet, value: "32" }
+        - { name: address, value: "{{ rke2_api_vip }}" }
+        # Control-plane VIP, with leader election across servers.
+        - { name: cp_enable, value: "true" }
+        - { name: cp_namespace, value: kube-system }
+        - { name: vip_leaderelection, value: "true" }
+        - { name: vip_leaseduration, value: "5" }
+        - { name: vip_renewdeadline, value: "3" }
+        - { name: vip_retryperiod, value: "1" }
+        # Services of type LoadBalancer; addresses are assigned by
+        # kube-vip-cloud-provider (deploy/k8s/kube-vip).
+        - { name: svc_enable, value: "true" }
+        - { name: vip_ddns, value: "false" }
+      securityContext:
+        capabilities:
+          add: [NET_ADMIN, NET_RAW]
+      volumeMounts:
+        - name: kubeconfig
+          mountPath: /etc/kubernetes/admin.conf
+          readOnly: true
+  volumes:
+    # RKE2 writes this after the server starts; the kubelet retries the pod
+    # until the file exists.
+    - name: kubeconfig
+      hostPath:
+        path: /etc/rancher/rke2/rke2.yaml
+        type: File

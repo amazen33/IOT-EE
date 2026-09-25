@@ -1,0 +1,41 @@
+# Copy to terraform.tfvars (git-ignored) and adjust. Credentials are NOT set
+# here: export TF_VAR_hyperv_user and TF_VAR_hyperv_password instead.
+
+cluster_name = "iotee-pc"
+
+hosts = {
+  # Wired desktop: carries the control plane (see deploy/README.md,
+  # "Topology limits", for why servers should not sit on the Wi-Fi host).
+  optiplex = {
+    address         = "192.168.1.10"
+    switch_name     = "iotee-external"
+    vm_root         = "D:\\HyperV\\iotee"
+    base_image_path = "D:\\HyperV\\images\\ubuntu-noble-base-20260925.vhdx"
+  }
+  # Wi-Fi laptop: agents (workers) only.
+  laptop = {
+    address         = "192.168.1.11"
+    switch_name     = "iotee-external"
+    vm_root         = "C:\\HyperV\\iotee"
+    base_image_path = "C:\\HyperV\\images\\ubuntu-noble-base-20260925.vhdx"
+  }
+}
+
+network = {
+  prefix_length = 24
+  gateway       = "192.168.1.1"
+  dns_servers   = ["192.168.1.1"]
+}
+
+ssh_authorized_keys = [
+  "ssh-ed25519 AAAA...replace-with-your-public-key operator@workstation",
+]
+
+# Add or remove entries to scale. Keep 1, 3 or 5 servers.
+nodes = {
+  "rke2-server-1" = { host = "optiplex", role = "server", ipv4 = "192.168.1.21", mac = "00155D0A0121", cpus = 2, memory_mb = 6144 }
+  "rke2-server-2" = { host = "optiplex", role = "server", ipv4 = "192.168.1.22", mac = "00155D0A0122", cpus = 2, memory_mb = 6144 }
+  "rke2-server-3" = { host = "optiplex", role = "server", ipv4 = "192.168.1.23", mac = "00155D0A0123", cpus = 2, memory_mb = 6144 }
+  "rke2-agent-1"  = { host = "laptop", role = "agent", ipv4 = "192.168.1.31", mac = "00155D0A0131", cpus = 2, memory_mb = 6144 }
+  "rke2-agent-2"  = { host = "laptop", role = "agent", ipv4 = "192.168.1.32", mac = "00155D0A0132", cpus = 2, memory_mb = 6144 }
+}

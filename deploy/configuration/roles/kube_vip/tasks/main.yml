@@ -1,0 +1,15 @@
+---
+# kube-vip runs as an RKE2 static pod on every server: RKE2 starts anything in
+# its pod-manifests directory with the kubelet, so the VIP comes up with the
+# first server, before any other server tries to join through it.
+- name: RKE2 static pod manifest directory
+  ansible.builtin.file:
+    path: /var/lib/rancher/rke2/agent/pod-manifests
+    state: directory
+    mode: "0755"
+
+- name: Kube-vip static pod (control-plane VIP + LoadBalancer services)
+  ansible.builtin.template:
+    src: kube-vip.yaml.j2
+    dest: /var/lib/rancher/rke2/agent/pod-manifests/kube-vip.yaml
+    mode: "0600"

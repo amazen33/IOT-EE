@@ -60,7 +60,7 @@ services/<name>/            autonomous Java services
   └─ correlation/            framework-free correlation-ID context
 adapters/<provider>/        real-backend implementations behind contracts (M10+; none exist in Java yet)
   └─ (e.g. worm_s3)         built from spec/ patterns; isolated, optional deps
-deploy/                     Ansible, Terraform/OpenTofu, Helm, Argo CD
+deploy/                     private-cloud IaC: provisioning/ (Hyper-V + Terraform), configuration/ (Ansible, RKE2), k8s/ (add-ons); see deploy/README.md
 spec/                       frozen M0–M8 Python reference implementation (not the platform)
 docs/                       ADRs, architecture guides, inventories
   └─ adr/                   numbered ADRs (0001–present) + README.md convention

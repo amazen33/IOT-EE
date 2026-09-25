@@ -1,0 +1,47 @@
+---
+- name: Refuse to run without a join token
+  ansible.builtin.assert:
+    that:
+      - rke2_token is defined
+      - rke2_token | length >= 32
+    fail_msg: >-
+      RKE2_TOKEN is not set (or shorter than 32 characters). Export it before
+      running Ansible, e.g. export RKE2_TOKEN="$(openssl rand -hex 32)", and keep
+      the same value for the life of the cluster.
+    quiet: true
+  no_log: true
+
+- name: Read the installed RKE2 version, if any
+  ansible.builtin.command: /usr/local/bin/rke2 --version
+  register: rke2_installed_version
+  changed_when: false
+  failed_when: false
+
+- name: Decide whether to install
+  ansible.builtin.set_fact:
+    rke2_needs_install: >-
+      {{ rke2_installed_version.rc != 0
+         or (rke2_version not in rke2_installed_version.stdout) }}
+
+- name: Download the RKE2 install script
+  ansible.builtin.get_url:
+    url: "{{ rke2_install_script_url }}"
+    dest: /usr/local/sbin/rke2-install.sh
+    mode: "0700"
+  when: rke2_needs_install
+
+- name: Install RKE2 {{ rke2_version }} ({{ rke2_install_type }})
+  # RKE2 ships its own containerd, so no separate container runtime is
+  # installed on the node.
+  ansible.builtin.command: /usr/local/sbin/rke2-install.sh
+  environment:
+    INSTALL_RKE2_VERSION: "{{ rke2_version }}"
+    INSTALL_RKE2_TYPE: "{{ rke2_install_type }}"
+  when: rke2_needs_install
+  changed_when: true
+
+- name: RKE2 config directory
+  ansible.builtin.file:
+    path: /etc/rancher/rke2
+    state: directory
+    mode: "0700"

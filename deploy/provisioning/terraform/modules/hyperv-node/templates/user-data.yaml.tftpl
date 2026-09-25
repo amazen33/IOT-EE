@@ -1,0 +1,33 @@
+#cloud-config
+# Rendered by deploy/provisioning/terraform/modules/hyperv-node.
+hostname: ${hostname}
+preserve_hostname: false
+manage_etc_hosts: true
+
+users:
+  - name: ${ssh_user}
+    groups: [sudo]
+    shell: /bin/bash
+    # Passwordless sudo for Ansible; there is no password at all, and SSH
+    # password login is disabled below.
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
+    lock_passwd: true
+    ssh_authorized_keys:
+%{ for key in ssh_authorized_keys ~}
+      - ${key}
+%{ endfor ~}
+
+ssh_pwauth: false
+disable_root: true
+
+# Grow the root filesystem to the disk size.
+growpart:
+  mode: auto
+  devices: ["/"]
+
+package_update: true
+packages:
+  # Hyper-V KVP/VSS daemons, so the host can see guest IPs and take
+  # consistent backups.
+  - linux-cloud-tools-virtual
+  - python3

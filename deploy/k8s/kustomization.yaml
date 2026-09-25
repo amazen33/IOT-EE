@@ -1,0 +1,7 @@
+# Cluster add-ons applied after Ansible bootstrap:
+#   kubectl --kubeconfig ../configuration/.kube/iotee-pc.yaml apply -k .
+# Argo CD will take over applying this directory once it is installed.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - kube-vip

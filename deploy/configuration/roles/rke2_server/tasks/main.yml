@@ -1,0 +1,95 @@
+---
+- name: Install RKE2 server binaries
+  ansible.builtin.include_role:
+    name: rke2_install
+  vars:
+    rke2_install_type: server
+
+# Join-or-init: if the control-plane VIP already answers on the supervisor
+# port, a cluster exists and this server JOINS it -- including a rebuilt
+# rke2-server-1. Only the first server, with no VIP answering, initializes a
+# new cluster. The play runs servers one at a time (serial: 1) so this check
+# sees the servers bootstrapped before it.
+- name: Check whether a cluster already answers on the VIP
+  ansible.builtin.wait_for:
+    host: "{{ rke2_api_vip }}"
+    port: 9345
+    timeout: 5
+  register: rke2_vip_probe
+  # ignore_errors (not failed_when: false) keeps the real result: with
+  # failed_when: false Ansible would record failed=false even on a timeout,
+  # and every server would wrongly try to join.
+  ignore_errors: true
+
+- name: Decide init vs join
+  ansible.builtin.set_fact:
+    rke2_join_existing: "{{ not (rke2_vip_probe.failed | default(false)) }}"
+
+- name: Refuse to create a second cluster
+  ansible.builtin.assert:
+    that: rke2_join_existing or inventory_hostname == groups['rke2_servers'][0]
+    fail_msg: >-
+      No cluster answers on {{ rke2_api_vip }}:9345, and {{ inventory_hostname }} is
+      not the first server. Bootstrap {{ groups['rke2_servers'][0] }} first, or check
+      kube-vip on the existing servers.
+
+- name: RKE2 server configuration
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: /etc/rancher/rke2/config.yaml
+    mode: "0600"
+  notify: Restart rke2-server
+
+- name: Start RKE2 server
+  ansible.builtin.systemd_service:
+    name: rke2-server
+    enabled: true
+    state: started
+
+- name: Apply pending config changes before waiting for readiness
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait for this node to report Ready
+  ansible.builtin.command: >-
+    /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml
+    get node {{ inventory_hostname }}
+    -o 'jsonpath={.status.conditions[?(@.type=="Ready")].status}'
+  register: rke2_ready
+  until: rke2_ready.stdout == "True"
+  retries: 60
+  delay: 10
+  changed_when: false
+
+- name: Wait for the API server behind the VIP
+  ansible.builtin.wait_for:
+    host: "{{ rke2_api_vip }}"
+    port: 6443
+    timeout: 300
+
+- name: Export an admin kubeconfig that points at the VIP
+  when: inventory_hostname == groups['rke2_servers'][0]
+  block:
+    - name: Read the node-local kubeconfig
+      ansible.builtin.slurp:
+        src: /etc/rancher/rke2/rke2.yaml
+      register: rke2_kubeconfig
+      no_log: true
+
+    - name: Kubeconfig output directory
+      ansible.builtin.file:
+        path: "{{ kubeconfig_output_dir }}"
+        state: directory
+        mode: "0700"
+      delegate_to: localhost
+      become: false
+
+    - name: Write {{ cluster_name }}.yaml on the controller (git-ignored)
+      ansible.builtin.copy:
+        content: >-
+          {{ rke2_kubeconfig.content | b64decode
+             | replace('https://127.0.0.1:6443', 'https://' ~ rke2_api_vip ~ ':6443') }}
+        dest: "{{ kubeconfig_output_dir }}/{{ cluster_name }}.yaml"
+        mode: "0600"
+      delegate_to: localhost
+      become: false
+      no_log: true
