@@ -21,9 +21,14 @@
                       silently to -QemuInstallRoot. Skipped if qemu-img.exe is
                       already on PATH or already at -QemuInstallRoot.
     5. Template     - downloads the Ubuntu cloud image, verifies it against
-                      Canonical's SHA256SUMS, converts it to VHDX with qemu-img,
-                      grows it, and marks it read-only. VMs use it as the parent
-                      of their differencing OS disks.
+                      Canonical's SHA256SUMS, converts it to VHDX with
+                      qemu-img, grows it with Hyper-V's Resize-VHD (qemu-img
+                      can convert into vhdx but not resize one), and marks it
+                      read-only. VMs use it as the parent of their
+                      differencing OS disks. A file left behind by a build
+                      that failed partway through isn't read-only, so the
+                      next run detects and replaces it rather than treating
+                      it as done.
     6. WinRM HTTPS  - listener on 5986 (self-signed certificate) and a firewall
                       rule, for the Terraform Hyper-V provider.
 
@@ -300,15 +305,27 @@ else {
 
 # --- 5. Golden template -----------------------------------------------------------
 $templatePath = Join-Path $TemplateRoot $TemplateName
+# Completion is marked by IsReadOnly (set only after a full, successful
+# build), not by the file merely existing: a run that fails partway through
+# (network error, qemu-img error, etc.) can leave a partial file behind, and
+# treating that as "already built" would silently ship a broken template.
+$templateExists = Test-Path -LiteralPath $templatePath
+$templateComplete = $templateExists -and (Get-Item -LiteralPath $templatePath).IsReadOnly
 if ($SkipTemplate) {
     Write-Step 'Template (skipped)'
 }
-elseif (Test-Path -LiteralPath $templatePath) {
+elseif ($templateComplete) {
     Write-Step "Template $templatePath"
     Write-Host '    exists (templates are immutable; use -TemplateName for a new one)'
 }
 else {
     Write-Step "Template $templatePath"
+    if ($templateExists) {
+        Write-Warning "    $templatePath exists but isn't marked read-only -- a previous build likely failed partway through. Rebuilding it."
+        if ($PSCmdlet.ShouldProcess($templatePath, 'Remove incomplete template')) {
+            Remove-Item -LiteralPath $templatePath -Force
+        }
+    }
     if (-not (Get-Command $resolvedQemuImgPath -ErrorAction SilentlyContinue)) {
         throw "qemu-img not found at '$resolvedQemuImgPath'."
     }
@@ -334,8 +351,11 @@ else {
 
         & $resolvedQemuImgPath convert -p -f qcow2 -O vhdx -o subformat=dynamic $imagePath $templatePath
         if ($LASTEXITCODE -ne 0) { throw "qemu-img convert failed ($LASTEXITCODE)." }
-        & $resolvedQemuImgPath resize -f vhdx $templatePath "${TemplateSizeGB}G"
-        if ($LASTEXITCODE -ne 0) { throw "qemu-img resize failed ($LASTEXITCODE)." }
+
+        # Not qemu-img resize: QEMU's vhdx driver doesn't support resizing a
+        # VHDX file ("Image format driver does not support resize"), only
+        # converting into one. Hyper-V's own cmdlet does support it.
+        Resize-VHD -Path $templatePath -SizeBytes ([int64]$TemplateSizeGB * 1GB)
 
         # Parent of every VM's differencing disk: must never change in place.
         Set-ItemProperty -LiteralPath $templatePath -Name IsReadOnly -Value $true
