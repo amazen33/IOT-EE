@@ -20,7 +20,7 @@ only the **hostname, static IP, and one login with one SSH public key**.
 Outputs the node list as JSON and as an Ansible inventory for Layer 1.
 
 **Does not:** install packages, run commands in the guests, format the data
-disk, or touch Kubernetes. That is Layer 1 (`deploy/configuration`, Ansible)
+disk, or touch Kubernetes. That is Layer 1 (`deploy/01-k8s-engine/rke2-ansible`, Ansible)
 and Layer 2 (`deploy/k8s`).
 
 The seed is required, not optional: Hyper-V cannot set a Linux guest's IP from
@@ -43,15 +43,15 @@ static address on first boot.
 | Address(es) | Used for |
 | --- | --- |
 | 10.20.0.1 | Host (gateway, NAT) |
-| 10.20.0.5 | Kubernetes API virtual IP (Layer 1, kube-vip) |
 | 10.20.0.10-.22 | Nodes |
-| 10.20.0.40-.49 | LoadBalancer services (Layer 2) |
+| 10.20.0.40-.49 | LoadBalancer services (Layer 2, kube-vip) |
 
 - The VMs reach the internet through NAT. DNS comes from `network.dns_servers`
   (NAT provides none).
 - The VMs are reachable **from the host only**. Publish a port to the LAN with
   a NAT static mapping. The prep script can do it for the API:
-  `-ApiServerForwardTo 10.20.0.10`.
+  `-ApiServerForwardTo 10.20.0.10`. Add the host's LAN address to Layer 1's
+  `rke2_tls_san` so the API certificate is valid for it.
 - Windows allows **one NAT per host**. The prep script refuses to run if a
   different NAT exists (for example Docker Desktop's) rather than replace it.
 
@@ -120,10 +120,12 @@ After the first `tofu init`, commit the provider lock file:
 
 ```powershell
 tofu output nodes_json
-tofu output -raw ansible_inventory | Set-Content -Encoding utf8 ..\..\configuration\inventory\generated\hosts.yml
+tofu output -raw ansible_inventory_ini | Set-Content -Encoding utf8 ..\..\01-k8s-engine\rke2-ansible\inventory\hosts.ini
 ```
 
-Then continue with Layer 1 in `deploy/README.md`.
+With the default `nodes` and `network` the generated file equals the committed
+`inventory/hosts.ini`, so `git diff` shows nothing. Then continue with Layer 1
+in `deploy/01-k8s-engine/rke2-ansible/README.md`.
 
 ## Outputs
 
@@ -132,15 +134,16 @@ Then continue with Layer 1 in `deploy/README.md`.
 | `nodes` | per VM: role, IPv4, MAC, vCPU, RAM, data disk, Hyper-V name |
 | `nodes_json` | role, IPv4 and MAC per VM, as a JSON string |
 | `control_plane_ips`, `worker_ips` | lists of IPv4 addresses |
-| `ansible_inventory` | YAML inventory: groups `rke2_servers` / `rke2_agents`, `ansible_host`, `ansible_user` |
+| `ansible_inventory_ini` | INI inventory for Layer 1: groups `rke2_server` / `rke2_agent` / `rke2_cluster`, `ansible_host`, `ansible_user` |
+| `ansible_inventory` | the same inventory as YAML |
 | `ansible_inventory_json` | the same inventory as JSON |
 | `network` | CIDR, gateway, DNS, switch name |
 
 ## Changing the cluster
 
 - **Add a worker:** add an entry to `nodes` (unique name, `ip_host`, `mac`),
-  `tofu apply`, re-export the inventory, then run the Layer 1 bootstrap for
-  that node.
+  `tofu apply`, re-export the inventory, then run Layer 1's `site-rke2.yml` for
+  that node (with the first server in `--limit`, which supplies the join token).
 - **Remove a node:** drain it in Layer 1 first, remove its entry, `tofu apply`.
 - **Rebuild a node:**
   `tofu apply -replace='hyperv_vhd.os["rke2-worker-01"]' -replace='hyperv_vhd.data["rke2-worker-01"]' -replace='hyperv_machine_instance.vm["rke2-worker-01"]'`

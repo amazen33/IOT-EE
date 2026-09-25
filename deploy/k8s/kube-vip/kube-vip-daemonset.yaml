@@ -1,0 +1,59 @@
+# kube-vip in SERVICES-ONLY mode: announces (ARP) the addresses that
+# kube-vip-cloud-provider assigns to Services of type LoadBalancer.
+# It does not manage a control-plane VIP (cp_enable=false): Layer 1 exposes
+# the API on the server's own address, and the Kubernetes engine layer stays
+# free of add-ons.
+#
+# Runs in kube-system, which the cluster's restricted Pod Security Standard
+# exempts; it needs hostNetwork and NET_ADMIN/NET_RAW to send ARP.
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: kube-vip-ds
+  namespace: kube-system
+  labels:
+    app.kubernetes.io/name: kube-vip-ds
+    app.kubernetes.io/version: v1.2.4
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: kube-vip-ds
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: kube-vip-ds
+    spec:
+      serviceAccountName: kube-vip
+      hostNetwork: true
+      tolerations:
+        # Also run on the server, which carries CriticalAddonsOnly:NoExecute.
+        - operator: Exists
+          effect: NoSchedule
+        - operator: Exists
+          effect: NoExecute
+      containers:
+        - name: kube-vip
+          # v1.2.4 checked against kube-vip's GitHub releases (2026-09-25).
+          image: ghcr.io/kube-vip/kube-vip:v1.2.4
+          imagePullPolicy: IfNotPresent
+          args: ["manager"]
+          env:
+            - name: vip_arp
+              value: "true"
+            - name: vip_interface
+              value: eth0          # cloud-init names the NIC eth0 (Layer 0)
+            - name: cp_enable
+              value: "false"
+            - name: svc_enable
+              value: "true"
+            - name: vip_leaderelection
+              value: "true"
+          securityContext:
+            capabilities:
+              add: ["NET_ADMIN", "NET_RAW"]
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              memory: 128Mi

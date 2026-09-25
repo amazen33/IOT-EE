@@ -1,0 +1,54 @@
+---
+# Layer 1: the raw Kubernetes engine (RKE2, CIS profile) and nothing else.
+# Service meshes, Kafka, kube-vip and application workloads belong to Layer 2
+# (deploy/k8s) and later layers; do not add them here.
+#
+#   export RKE2_TOKEN="$(openssl rand -hex 32)"   # first run only; reuse afterwards
+#   ansible-playbook site-rke2.yml
+#
+# Idempotent: re-running converges without restarting healthy services.
+
+- name: Preflight
+  hosts: rke2_cluster
+  gather_facts: false
+  become: false
+  run_once: true
+  tasks:
+    - name: Require the cluster token in the environment
+      ansible.builtin.assert:
+        that:
+          - rke2_token is defined
+          - rke2_token | length >= 32
+        fail_msg: >-
+          RKE2_TOKEN is not set or is shorter than 32 characters. Export it before
+          running, e.g. export RKE2_TOKEN="$(openssl rand -hex 32)", and keep the
+          same value for the life of the cluster.
+        quiet: true
+      # No no_log: an assert prints only the expression and fail_msg, never the value.
+
+    - name: Require exactly the expected groups
+      ansible.builtin.assert:
+        that:
+          - groups['rke2_server'] | default([]) | length in [1, 3, 5]
+          - groups['rke2_agent'] | default([]) | length >= 1
+        fail_msg: "Inventory needs 1, 3 or 5 hosts in [rke2_server] (etcd quorum) and at least 1 in [rke2_agent]."
+
+- name: Prepare every node's OS
+  hosts: rke2_cluster
+  become: true
+  roles:
+    - os_prep
+
+- name: RKE2 servers (control plane + etcd)
+  hosts: rke2_server
+  become: true
+  # One at a time: the first server initialises the cluster, any others join it.
+  serial: 1
+  roles:
+    - rke2_server
+
+- name: RKE2 agents (workers)
+  hosts: rke2_agent
+  become: true
+  roles:
+    - rke2_agent

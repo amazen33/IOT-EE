@@ -1,4 +1,0 @@
----
-# "server" or "agent"; set by the rke2_server / rke2_agent roles.
-rke2_install_type: server
-rke2_install_script_url: "https://get.rke2.io"

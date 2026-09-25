@@ -1,0 +1,26 @@
+# Managed by Ansible (deploy/01-k8s-engine/rke2-ansible, role rke2_server).
+# Pod Security Standards for the whole cluster: "restricted" enforced, audited
+# and warned on in every namespace except the system namespaces RKE2's own
+# components run in. Workload namespaces get NO exemption; relax a namespace
+# explicitly with a pod-security.kubernetes.io/enforce label in Layer 2+.
+apiVersion: apiserver.config.k8s.io/v1
+kind: AdmissionConfiguration
+plugins:
+  - name: PodSecurity
+    configuration:
+      apiVersion: pod-security.admission.config.k8s.io/v1
+      kind: PodSecurityConfiguration
+      defaults:
+        enforce: "restricted"
+        enforce-version: "latest"
+        audit: "restricted"
+        audit-version: "latest"
+        warn: "restricted"
+        warn-version: "latest"
+      exemptions:
+        usernames: []
+        runtimeClasses: []
+        namespaces:
+{% for ns in rke2_pss_exempt_namespaces %}
+          - {{ ns }}
+{% endfor %}

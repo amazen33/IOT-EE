@@ -1,0 +1,13 @@
+# Managed by Ansible (deploy/01-k8s-engine/rke2-ansible, role rke2_agent).
+# Contains the node token: mode 0600, root only.
+
+# CIS profile on the agent too: kubelet runs with protect-kernel-defaults and
+# the CIS kubelet settings (os_prep set the matching sysctls).
+profile: "cis"
+
+# Join the cluster through the first server's supervisor port.
+server: "{{ rke2_server_join_url }}"
+token: "{{ rke2_agent_token }}"
+
+node-name: "{{ inventory_hostname }}"
+node-ip: "{{ rke2_node_ip }}"

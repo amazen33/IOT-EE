@@ -1,4 +1,0 @@
-# Written from Layer 0's output:
-#   tofu -chdir=../00-infra/private-hyperv output -raw ansible_inventory > inventory/generated/hosts.yml
-*
-!.gitignore

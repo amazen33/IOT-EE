@@ -24,7 +24,8 @@ is replaced by the layered, single-host design below.
 
 1. **Layers, each consuming only the previous layer's outputs:**
    - Layer 0 `deploy/00-infra/private-hyperv`: raw VMs.
-   - Layer 1 `deploy/configuration`: OS and Kubernetes.
+   - Layer 1 `deploy/01-k8s-engine/rke2-ansible`: OS preparation and the
+     raw Kubernetes engine only (no meshes, messaging or workloads).
    - Layer 2 `deploy/k8s`: cluster add-ons.
 
    Layer 0 publishes the node list as JSON and as an Ansible inventory
@@ -42,9 +43,14 @@ is replaced by the layered, single-host design below.
 4. **Topology: 1 control-plane node + 2 workers** (`rke2-master-01`,
    `rke2-worker-01/02`). The node list is a keyed map. Terraform accepts 1, 3
    or 5 control-plane nodes, so HA is a variable change.
-5. **Distribution: RKE2** with embedded etcd. **kube-vip** runs in ARP mode
-   as a static pod on the control plane: an API VIP (10.20.0.5) and
-   LoadBalancer services, with addresses from kube-vip-cloud-provider.
+5. **Distribution: RKE2** with embedded etcd, hardened in Layer 1:
+   `profile: "cis"` on every node, the restricted Pod Security Standard
+   enforced cluster-wide (system namespaces exempt), secrets encryption at
+   rest, and a `CriticalAddonsOnly` taint on the server. Agents join with the
+   node token extracted from the first server, which pins the cluster CA.
+   Clients reach the API on the server's own address; there is no API VIP.
+   **kube-vip** runs in Layer 2 as a services-only DaemonSet (ARP) for
+   LoadBalancer Services, with addresses from kube-vip-cloud-provider.
 6. **Hypervisor automation: the community `taliesins/hyperv` provider** over
    WinRM/HTTPS. VM checkpoints are disabled.
 7. **Scaling is declared in Git, not autoscaled.** The Kubernetes Cluster
@@ -65,7 +71,14 @@ is replaced by the layered, single-host design below.
   This is accepted for the current lab and dev scale.
 - **Reachability is host-only by default.** LAN access to the API or a
   service needs a NAT static mapping, and the API certificate needs the
-  host's name in `rke2_api_fqdn`.
+  host's name in Layer 1's `rke2_tls_san`.
+- **No API VIP:** growing to 3 servers later means re-pointing clients (or
+  adding a VIP/DNS name then). Accepted to keep Layer 1 free of add-ons.
+- **Restricted PSS everywhere:** Layer 2+ components that need host access
+  must run in an exempt system namespace or carry an explicit, reviewed
+  namespace label.
+- **Single server holds etcd alone:** recovery is an etcd snapshot restore
+  with the same `RKE2_TOKEN`; snapshots must be copied off the VM.
 - **Windows allows one NAT per host,** so this cannot coexist with another
   NAT (for example Docker Desktop's) on the same host without sharing its
   prefix.
@@ -101,3 +114,5 @@ is replaced by the layered, single-host design below.
   cluster; rebuild instead.
 - **`count`-based node list:** removing one node renumbers and rebuilds the
   others.
+- **kube-vip static pod for an API VIP in Layer 1:** puts an add-on into the
+  engine layer; the single server's address suffices for now.

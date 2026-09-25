@@ -1,0 +1,88 @@
+---
+- name: Require the node token from the first server
+  ansible.builtin.assert:
+    that: rke2_agent_token | length > 0
+    fail_msg: >-
+      No node token from {{ rke2_server_first }}. Run the whole site-rke2.yml
+      (the server play extracts the token); with --limit, include the first
+      server: --limit {{ rke2_server_first }},{{ inventory_hostname }}
+    quiet: true
+  # No no_log: an assert prints only the expression and fail_msg, never the value.
+
+# ----- Install ---------------------------------------------------------------
+- name: Read the installed RKE2 version, if any
+  ansible.builtin.command: /usr/local/bin/rke2 --version
+  register: rke2_installed_version
+  changed_when: false
+  ignore_errors: true
+
+- name: Decide whether to install
+  ansible.builtin.set_fact:
+    rke2_needs_install: >-
+      {{ rke2_installed_version is failed
+         or (rke2_version not in rke2_installed_version.stdout | default('')) }}
+
+- name: Download the RKE2 install script
+  ansible.builtin.get_url:
+    url: "{{ rke2_install_script_url }}"
+    dest: /usr/local/sbin/rke2-install.sh
+    owner: root
+    group: root
+    mode: "0700"
+    force: true
+  when: rke2_needs_install
+
+- name: Install RKE2 agent {{ rke2_version }}
+  ansible.builtin.command: /usr/local/sbin/rke2-install.sh
+  environment:
+    INSTALL_RKE2_VERSION: "{{ rke2_version }}"
+    INSTALL_RKE2_TYPE: agent
+  when: rke2_needs_install
+  changed_when: true
+  notify: Restart rke2-agent
+
+# ----- Configure and join ------------------------------------------------------
+- name: RKE2 config directory
+  ansible.builtin.file:
+    path: /etc/rancher/rke2
+    state: directory
+    owner: root
+    group: root
+    mode: "0700"
+
+- name: RKE2 agent configuration
+  ansible.builtin.template:
+    src: config.yaml.j2
+    dest: /etc/rancher/rke2/config.yaml
+    owner: root
+    group: root
+    mode: "0600"
+  notify: Restart rke2-agent
+  no_log: true   # rendered content includes the node token
+
+- name: Wait for the server's supervisor port
+  ansible.builtin.wait_for:
+    host: "{{ hostvars[rke2_server_first]['rke2_node_ip'] }}"
+    port: 9345
+    timeout: 300
+
+- name: Enable and start rke2-agent (joins the cluster)
+  ansible.builtin.systemd_service:
+    name: rke2-agent
+    enabled: true
+    state: started
+
+- name: Apply pending config changes before checking the node
+  ansible.builtin.meta: flush_handlers
+
+- name: Wait for this node to report Ready (asked from the first server)
+  ansible.builtin.command: >-
+    /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml
+    get node {{ inventory_hostname }}
+    -o 'jsonpath={.status.conditions[?(@.type=="Ready")].status}'
+  delegate_to: "{{ rke2_server_first }}"
+  register: rke2_ready
+  until: rke2_ready.stdout == "True"
+  retries: 60
+  delay: 10
+  changed_when: false

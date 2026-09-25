@@ -1,0 +1,16 @@
+---
+os_prep_kernel_modules:
+  - overlay
+  - br_netfilter
+
+# Kubernetes networking plus the kernel settings RKE2's CIS profile checks
+# (kubelet runs with --protect-kernel-defaults and refuses to start when these
+# differ). Same values as RKE2's rke2-cis-sysctl.conf.
+os_prep_sysctl:
+  net.bridge.bridge-nf-call-iptables: 1
+  net.bridge.bridge-nf-call-ip6tables: 1
+  net.ipv4.ip_forward: 1
+  vm.panic_on_oom: 0
+  vm.overcommit_memory: 1
+  kernel.panic: 10
+  kernel.panic_on_oops: 1

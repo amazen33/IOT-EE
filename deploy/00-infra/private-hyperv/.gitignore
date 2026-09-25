@@ -4,3 +4,5 @@
 terraform.tfvars
 *.auto.tfvars
 crash.log
+# Saved plans embed variable values, including TF_VAR_hyperv_password.
+*.tfplan

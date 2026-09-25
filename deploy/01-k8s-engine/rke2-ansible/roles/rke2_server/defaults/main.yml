@@ -1,0 +1,25 @@
+---
+rke2_install_script_url: "https://get.rke2.io"
+
+# First server in the inventory initialises the cluster; others join it.
+rke2_server_first: "{{ groups['rke2_server'][0] }}"
+rke2_server_join_url: "https://{{ hostvars[rke2_server_first]['rke2_node_ip'] }}:9345"
+
+# Extra names/IPs for the API server certificate (e.g. a DNS name you point
+# at the server later). The node IP is always included.
+rke2_tls_san: []
+
+# Keep workloads off the control plane: RKE2's own add-ons tolerate this
+# taint, application pods do not, so they land on the agents.
+rke2_server_taint: true
+
+# Where the admin kubeconfig is written on the machine running Ansible.
+# The previous file, if any, is kept as a timestamped backup next to it.
+rke2_kubeconfig_dest: "~/.kube/config"
+
+# Namespaces exempt from the restricted Pod Security Standard: RKE2's own
+# system namespaces (the same list RKE2's built-in CIS default exempts).
+rke2_pss_exempt_namespaces:
+  - kube-system
+  - cis-operator-system
+  - tigera-operator

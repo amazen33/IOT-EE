@@ -1,6 +1,6 @@
 # LoadBalancer address pool (kube-vip-cloud-provider ConfigMap format).
 # Free addresses in Layer 0's VM subnet (10.20.0.0/24 by default): not node
-# addresses and not the control-plane VIP (rke2_api_vip, 10.20.0.5). They are
+# addresses (10.20.0.10-.22) and not the gateway (10.20.0.1). They are
 # reachable from the Hyper-V host; publish one to the LAN with a NAT static
 # mapping (see deploy/README.md, "Reaching services from the LAN").
 apiVersion: v1
