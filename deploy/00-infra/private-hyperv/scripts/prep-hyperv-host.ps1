@@ -354,8 +354,31 @@ else {
 
         # Not qemu-img resize: QEMU's vhdx driver doesn't support resizing a
         # VHDX file ("Image format driver does not support resize"), only
-        # converting into one. Hyper-V's own cmdlet does support it.
-        Resize-VHD -Path $templatePath -SizeBytes ([int64]$TemplateSizeGB * 1GB)
+        # converting into one. Hyper-V's own cmdlet does support it -- but
+        # first, qemu-img's Windows VHDX writer marks the file NTFS-sparse,
+        # and Resize-VHD refuses a VHDX that is sparse, compressed or
+        # encrypted ("must be uncompressed and unencrypted and must not be
+        # sparse"). Clear whichever of those NTFS attributes are actually
+        # set before resizing; harmless (a no-op) when they aren't.
+        $attrs = (Get-Item -LiteralPath $templatePath).Attributes
+        $isSparse = [bool]($attrs -band [System.IO.FileAttributes]::SparseFile)
+        $isCompressed = [bool]($attrs -band [System.IO.FileAttributes]::Compressed)
+        $isEncrypted = [bool]($attrs -band [System.IO.FileAttributes]::Encrypted)
+        if ($isSparse -or $isCompressed -or $isEncrypted) {
+            Write-Host "    clearing NTFS attributes before resize (sparse=$isSparse compressed=$isCompressed encrypted=$isEncrypted)"
+            if ($isSparse) { & fsutil.exe sparse setflag $templatePath 0 | Out-Null }
+            if ($isCompressed) { & compact.exe /U $templatePath | Out-Null }
+            if ($isEncrypted) { & cipher.exe /D $templatePath | Out-Null }
+        }
+        try {
+            Resize-VHD -Path $templatePath -SizeBytes ([int64]$TemplateSizeGB * 1GB)
+        }
+        catch {
+            throw "Resize-VHD failed even after clearing sparse/compressed/encrypted attributes. " +
+                "If $TemplateRoot sits on a volume with NTFS compression or BitLocker/EFS " +
+                "enabled at the folder or volume level (not just the file), turn that off for " +
+                "$TemplateRoot and retry. Underlying error: $($_.Exception.Message)"
+        }
 
         # Parent of every VM's differencing disk: must never change in place.
         Set-ItemProperty -LiteralPath $templatePath -Name IsReadOnly -Value $true
