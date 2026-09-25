@@ -8,7 +8,7 @@ package org.springframework.web.bind.annotation;
  * its directory relative to the source root) so ArchUnit's
  * resideInAnyPackage match proves the rule fires without needing the
  * real spring-web dependency on this module's test classpath. Never
- * referenced from real {@code core} source.
+ * referenced from real production source.
  */
 public @interface FakeRestController {
 }

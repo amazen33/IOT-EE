@@ -1,4 +1,4 @@
-package com.iotee.platform.identity.correlation;
+package com.iotee.platform.identity.adapter.in.rest;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -8,6 +8,8 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.iotee.platform.identity.correlation.CorrelationIdConstants;
+import com.iotee.platform.identity.correlation.CorrelationIdContext;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.junit.jupiter.api.AfterEach;

@@ -1,5 +1,7 @@
-package com.iotee.platform.identity.correlation;
+package com.iotee.platform.identity.adapter.in.rest;
 
+import com.iotee.platform.identity.correlation.CorrelationIdConstants;
+import com.iotee.platform.identity.correlation.CorrelationIdContext;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.slf4j.MDC;
@@ -18,7 +20,10 @@ import org.springframework.web.servlet.HandlerInterceptor;
  * implements a Spring type and touches the servlet API, both forbidden
  * under {@code common}'s old framework-freedom rule); ADR 0013 retired
  * that shared module, so this class now lives beside the framework-free
- * core it adapts, as this service's own code. {@link WebMvcConfig}
+ * core it adapts, as this service's own code. Since Track C step C1
+ * it sits in {@code adapter.in.rest} (ADR 0017 Decision 2: the Spring
+ * interceptor is part of the REST adapter; the framework-free context
+ * stays in {@code correlation}). {@link WebMvcConfig}
  * registers this bean directly for this service -- there is no shared
  * auto-configuration to depend on, and a future service that needs the
  * same wiring authors its own copy of this class and its own

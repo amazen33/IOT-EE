@@ -29,16 +29,20 @@ import org.junit.jupiter.api.Test;
  * <p>Two rules:
  *
  * <ol>
- *   <li>No class in {@code services.identity}, outside a future {@code
- *       services.identity.adapters} package, may depend on a
- *       cloud-vendor or messaging SDK ({@code software.amazon.awssdk..},
- *       {@code io.minio..}, {@code org.apache.kafka..}). Currently
- *       VACUOUSLY exempt-package-wise, since no {@code adapters}
- *       package exists in this service yet (M10+; mirrors the Python
- *       spec's {@code adapters/worm_s3} boundary) -- the exemption is
- *       declared now so the rule does not need rewriting the day that
- *       package is added, matching ADR 0012 Risk 2's own vacuous-until-
- *       exercised framing for this exact rule shape.</li>
+ *   <li>No class in {@code services.identity}, outside the driven-
+ *       adapter ring {@code services.identity.adapter.out..} (ADR 0017
+ *       Decision 2), may depend on a cloud-vendor, messaging, CDC, or
+ *       ThingsBoard SDK ({@code software.amazon.awssdk..},
+ *       {@code io.minio..}, {@code org.apache.kafka..},
+ *       {@code io.debezium..}, {@code org.thingsboard..}). The
+ *       {@code adapter.out} ring exists since Track C step C1 (the
+ *       in-memory role-assignment adapter), but nothing in it uses a
+ *       vendor SDK yet, so the exemption is still VACUOUS -- see
+ *       {@link #noVendorSdkOutsideAdaptersRuleIsCurrentlyVacuousForItsExemption()},
+ *       which fails the day the first real vendor-backed adapter lands.
+ *       (ADR 0017 Decision 4 narrows this further, per concern --
+ *       e.g. Kafka only in {@code adapter.out.messaging} -- when those
+ *       adapters exist.)</li>
  *   <li>No class in {@code services.identity} may depend on a
  *       persistence PROVIDER ({@code org.hibernate..}, {@code
  *       org.eclipse.persistence..}, {@code org.jooq..}). The JPA spec
@@ -66,7 +70,11 @@ class IdentityFrameworkFreedomArchitectureRulesTest {
     private static final String[] VENDOR_SDK_DENYLIST = {
             "software.amazon.awssdk..",
             "io.minio..",
-            "org.apache.kafka.."
+            "org.apache.kafka..",
+            "io.debezium..",
+            // ThingsBoard's real Java/Maven namespace is org.thingsboard
+            // (e.g. org.thingsboard.server..), not com.thingsboard.
+            "org.thingsboard.."
     };
 
     private static final String[] PERSISTENCE_PROVIDER_DENYLIST = {
@@ -82,12 +90,11 @@ class IdentityFrameworkFreedomArchitectureRulesTest {
     private static ArchRule noVendorSdkOutsideAdapters() {
         return ArchRules.noClassesOutsideSubpackageDependOnPackages(
                 BASE_PACKAGE,
-                BASE_PACKAGE + ".adapters",
-                "vendor SDKs (AWS SDK, MinIO, Kafka clients) are confined to a future "
-                        + "services.identity.adapters package (mirrors the Python spec's "
-                        + "adapters/worm_s3 boundary; no such package exists in this service yet, "
-                        + "so this rule's exemption is currently vacuous); the rest of "
-                        + "services.identity must stay vendor-neutral.",
+                BASE_PACKAGE + ".adapter.out..",
+                "vendor SDKs (AWS SDK, MinIO, Kafka, Debezium, ThingsBoard) are confined to "
+                        + "the driven-adapter ring services.identity.adapter.out (ADR 0017 "
+                        + "Decision 2/4); the domain, ports, application layer, and driving "
+                        + "adapters must stay vendor-neutral.",
                 VENDOR_SDK_DENYLIST);
     }
 
@@ -108,17 +115,30 @@ class IdentityFrameworkFreedomArchitectureRulesTest {
 
     @Test
     void noVendorSdkOutsideAdaptersRuleIsCurrentlyVacuousForItsExemption() {
-        // No services.identity.adapters package exists yet -- this test
-        // fails, forcing this class's Javadoc to be revisited, the day one
-        // is added, since the exemption would then need to be exercised
-        // for real rather than assumed vacuous.
+        // The adapter.out ring exists (step C1's in-memory adapter), but no
+        // class in it depends on a vendor SDK yet, so the exemption has
+        // never actually exempted anything. This test fails the day a real
+        // vendor-backed adapter lands, forcing this class's Javadoc to say
+        // the exemption is now exercised for real.
         JavaClasses classes = importIdentityModule();
-        boolean anyAdaptersPackageExists =
-                classes.stream().anyMatch(javaClass -> javaClass.getPackageName().contains(".adapters"));
-        assertFalse(anyAdaptersPackageExists,
-                "expected no services.identity.adapters package yet -- if this now fails, the "
-                        + "vendor-SDK-outside-adapters exemption is no longer vacuous and this test "
-                        + "(and the class Javadoc) should be updated to say so");
+        String adapterOutPrefix = BASE_PACKAGE + ".adapter.out";
+        boolean anyAdapterOutClassUsesAVendorSdk = classes.stream()
+                .filter(javaClass -> javaClass.getPackageName().startsWith(adapterOutPrefix))
+                .flatMap(javaClass -> javaClass.getDirectDependenciesFromSelf().stream())
+                .map(dependency -> dependency.getTargetClass().getPackageName())
+                .anyMatch(targetPackage -> {
+                    for (String denied : VENDOR_SDK_DENYLIST) {
+                        String root = denied.substring(0, denied.length() - 2);
+                        if (targetPackage.equals(root) || targetPackage.startsWith(root + ".")) {
+                            return true;
+                        }
+                    }
+                    return false;
+                });
+        assertFalse(anyAdapterOutClassUsesAVendorSdk,
+                "expected no vendor SDK use inside services.identity.adapter.out yet -- if this now "
+                        + "fails, the vendor-SDK exemption is no longer vacuous and this test (and the "
+                        + "class Javadoc) should be updated to say so");
     }
 
     @Test

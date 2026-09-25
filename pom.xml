@@ -40,6 +40,13 @@
     <archunit.version>1.3.0</archunit.version>
     <protobuf.version>3.25.5</protobuf.version>
     <protobuf-maven-plugin.version>0.6.1</protobuf-maven-plugin.version>
+    <!-- gRPC-Java 1.68.1 is the release whose own README pairs it with
+         protoc 3.25.5, the same protobuf.version above (checked against
+         grpc-java's v1.68.1 README, not assumed). Bump both together. -->
+    <grpc.version>1.68.1</grpc.version>
+    <!-- Required at compile time by grpc-java generated stubs on Java 9+
+         (javax.annotation.Generated), per grpc-java's own README. -->
+    <tomcat-annotations-api.version>6.0.53</tomcat-annotations-api.version>
     <json-schema-validator.version>1.5.1</json-schema-validator.version>
     <cloudevents.version>3.0.0</cloudevents.version>
     <junit.version>5.10.3</junit.version>
@@ -62,6 +69,23 @@
         <version>${spring-cloud.version}</version>
         <type>pom</type>
         <scope>import</scope>
+      </dependency>
+      <!-- gRPC runtime for services that expose a gRPC driving adapter
+           (ADR 0017 Decision 3). An ordinary third-party dependency each
+           service declares for itself (ADR 0013 Decision 2); the BOM
+           only pins versions, it adds nothing to any classpath. -->
+      <dependency>
+        <groupId>io.grpc</groupId>
+        <artifactId>grpc-bom</artifactId>
+        <version>${grpc.version}</version>
+        <type>pom</type>
+        <scope>import</scope>
+      </dependency>
+      <dependency>
+        <groupId>org.apache.tomcat</groupId>
+        <artifactId>annotations-api</artifactId>
+        <version>${tomcat-annotations-api.version}</version>
+        <scope>provided</scope>
       </dependency>
 
       <!-- The ONE intra-repo artifact any service is ever allowed to depend
@@ -215,6 +239,41 @@
               <fail>true</fail>
             </configuration>
           </execution>
+          <!-- ADR 0017 Decision 4 (per-adapter vendor bans), dependency-
+               declaration half. DISABLED BY DEFAULT, on purpose: no
+               service declares a ThingsBoard or Kafka client today, so
+               this rule would pass vacuously and prove nothing, and the
+               day the FIRST real adapter lands it has to allow exactly
+               that adapter's module while still banning everyone else,
+               which cannot be expressed until that module exists.
+               Enable it (remove this comment wrapper) in the same PR
+               that adds the first TB CE or Kafka adapter, scoped with an
+               <includes> exception for that adapter's own artifact. The
+               source-level half of the same ban is already live as
+               ArchUnit rules in each service's own test tree (see
+               services/identity IdentityFrameworkFreedomArchitectureRulesTest).
+          <execution>
+            <id>enforce-no-vendor-sdk-outside-adapters</id>
+            <goals>
+              <goal>enforce</goal>
+            </goals>
+            <configuration>
+              <rules>
+                <bannedDependencies>
+                  <excludes>
+                    <exclude>org.thingsboard:*</exclude>
+                    <exclude>org.apache.kafka:*</exclude>
+                  </excludes>
+                  <message>
+                    ADR 0017 Decision 4: vendor SDKs are confined to their
+                    own adapter module.
+                  </message>
+                </bannedDependencies>
+              </rules>
+              <fail>true</fail>
+            </configuration>
+          </execution>
+          -->
         </executions>
       </plugin>
     </plugins>

@@ -32,11 +32,12 @@ import org.junit.jupiter.api.Test;
  * architecture tests:
  *
  * <ol>
- *   <li>{@code services.identity.core} must stay framework-free (no
- *       {@code org.springframework..}, {@code jakarta.servlet..}, or
- *       {@code jakarta.ws.rs..}) -- widened from Track B's first
- *       attempt (Spring-only) to match CLAUDE.md's stated "Architectural
- *       principles" denylist in full.</li>
+ *   <li>{@code services.identity.application} must stay framework-free
+ *       (no {@code org.springframework..}, {@code jakarta.servlet..}, or
+ *       {@code jakarta.ws.rs..}). Formerly the {@code core} rule; step C1
+ *       (ADR 0017) renamed {@code core} to {@code application}. The
+ *       hexagon's dependency-direction rules live in
+ *       {@code IdentityHexagonalArchitectureRulesTest}.</li>
  *   <li>{@code services.identity.rbac} must stay framework-free, same
  *       denylist. RBAC is authorization business logic (ADR 0013
  *       Decision 1: it is exactly the kind of code that must not become
@@ -141,12 +142,12 @@ class IdentityArchitectureRulesTest {
         return ImportHelper.importProductionClasses(PLATFORM_ROOT_PACKAGE);
     }
 
-    private static ArchRule identityCoreMustStayFrameworkFree() {
+    private static ArchRule identityApplicationMustStayFrameworkFree() {
         return ArchRules.noClassesDependOnPackages(
-                BASE_PACKAGE + ".core",
-                "services.identity.core holds the walking skeleton's framework-free handler "
-                        + "logic (TenantPermissionsHandler); Spring/servlet/JAX-RS types belong in "
-                        + "services.identity.web, the thin adapter that calls into core.",
+                BASE_PACKAGE + ".application",
+                "services.identity.application implements the inbound ports with plain Java "
+                        + "(ADR 0017 Decision 2); Spring/servlet/JAX-RS types belong in the driving "
+                        + "adapters and the config composition root.",
                 FRAMEWORK_DENYLIST);
     }
 
@@ -164,7 +165,7 @@ class IdentityArchitectureRulesTest {
         return ArchRules.noClassesDependOnPackages(
                 BASE_PACKAGE + ".domain",
                 "services.identity.domain is the pure domain core CLAUDE.md's Architectural "
-                        + "principles names first; it must stay as framework-free as core/ and rbac/, "
+                        + "principles names first; it must stay as framework-free as application/ and rbac/, "
                         + "and previously had no rule of its own.",
                 FRAMEWORK_DENYLIST);
     }
@@ -187,21 +188,21 @@ class IdentityArchitectureRulesTest {
     }
 
     @Test
-    void identityCoreDoesNotDependOnSpring() {
-        identityCoreMustStayFrameworkFree().check(importIdentityModule());
+    void identityApplicationDoesNotDependOnSpring() {
+        identityApplicationMustStayFrameworkFree().check(importIdentityModule());
     }
 
     @Test
-    void identityCoreFrameworkFreedomRuleActuallyCatchesAViolation() {
+    void identityApplicationFrameworkFreedomRuleActuallyCatchesAViolation() {
         JavaClasses fixtureClasses = ImportHelper.importFixturePackages(
-                "com.iotee.platform.identity.core.fixtures",
+                "com.iotee.platform.identity.application.fixtures",
                 "org.springframework.web.bind.annotation");
 
-        EvaluationResult result = identityCoreMustStayFrameworkFree().evaluate(fixtureClasses);
+        EvaluationResult result = identityApplicationMustStayFrameworkFree().evaluate(fixtureClasses);
 
         assertFalse(result.getFailureReport().isEmpty(),
                 "the fixture class deliberately depends on a Spring-package stand-in; if this is "
-                        + "empty, the core framework-freedom rule is not actually being enforced");
+                        + "empty, the application framework-freedom rule is not actually being enforced");
         assertTrue(
                 result.getFailureReport().toString().contains("org.springframework"),
                 () -> "expected the failure report to name org.springframework, got: "
@@ -209,12 +210,12 @@ class IdentityArchitectureRulesTest {
     }
 
     @Test
-    void theIdentityCoreFrameworkFreedomFixtureViolationWouldFailIfRunAsARealAssertion() {
+    void theIdentityApplicationFrameworkFreedomFixtureViolationWouldFailIfRunAsARealAssertion() {
         JavaClasses fixtureClasses = ImportHelper.importFixturePackages(
-                "com.iotee.platform.identity.core.fixtures",
+                "com.iotee.platform.identity.application.fixtures",
                 "org.springframework.web.bind.annotation");
 
-        assertThrows(AssertionError.class, () -> identityCoreMustStayFrameworkFree().check(fixtureClasses));
+        assertThrows(AssertionError.class, () -> identityApplicationMustStayFrameworkFree().check(fixtureClasses));
     }
 
     @Test
