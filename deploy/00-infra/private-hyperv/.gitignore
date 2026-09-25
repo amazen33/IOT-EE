@@ -6,3 +6,5 @@ terraform.tfvars
 crash.log
 # Saved plans embed variable values, including TF_VAR_hyperv_password.
 *.tfplan
+# QEMU for Windows, auto-installed by scripts/prep-hyperv-host.ps1.
+scripts/tools/

@@ -14,11 +14,16 @@
                       Windows NAT for the VM subnet. Optional port forward to
                       the Kubernetes API.
     3. Directories  - VM and template folders.
-    4. Template     - downloads the Ubuntu cloud image, verifies it against
+    4. qemu-img     - downloads QEMU for Windows (Stefan Weil's builds, linked
+                      from qemu.org/download), verifies it against the
+                      accompanying SHA-512 file, and installs it silently to
+                      -QemuInstallRoot. Skipped if qemu-img.exe is already on
+                      PATH or already at -QemuInstallRoot.
+    5. Template     - downloads the Ubuntu cloud image, verifies it against
                       Canonical's SHA256SUMS, converts it to VHDX with qemu-img,
                       grows it, and marks it read-only. VMs use it as the parent
                       of their differencing OS disks.
-    5. WinRM HTTPS  - listener on 5986 (self-signed certificate) and a firewall
+    6. WinRM HTTPS  - listener on 5986 (self-signed certificate) and a firewall
                       rule, for the Terraform Hyper-V provider.
 
   The defaults match terraform.tfvars.example.
@@ -29,7 +34,18 @@
   reach the API. Without it, the API is reachable from this host only.
 
 .PARAMETER QemuImgPath
-  qemu-img.exe from QEMU for Windows. Needed only to build the template.
+  qemu-img.exe from QEMU for Windows. Needed only to build the template. If
+  this parameter is not explicitly passed, it is resolved automatically: PATH,
+  then -QemuInstallRoot, installing there if neither has it (see -SkipQemuInstall).
+
+.PARAMETER QemuInstallRoot
+  Where to silently install QEMU for Windows if qemu-img.exe isn't already on
+  PATH. Defaults next to this script, not Program Files, so it needs no extra
+  admin consent beyond what the script already requires.
+
+.PARAMETER SkipQemuInstall
+  Don't auto-install QEMU. Fails the template step if qemu-img still can't be
+  found, with instructions to install it or pass -QemuImgPath.
 
 .EXAMPLE
   .\prep-hyperv-host.ps1 -WhatIf
@@ -59,12 +75,22 @@ param(
 
     [string] $QemuImgPath = 'qemu-img.exe',
 
+    # Local, not Program Files: this script already requires admin, but an
+    # install under its own folder needs no separate consent and is easy to
+    # remove (delete the folder) without touching anything system-wide.
+    [string] $QemuInstallRoot = (Join-Path $PSScriptRoot 'tools\qemu'),
+
+    # Pinned; bump with -QemuInstallerVersion rather than editing the script.
+    # Checked against https://qemu.weilnetz.de/w64/ on 2026-09-25.
+    [string] $QemuInstallerVersion = '20260811',
+
     [string] $ApiServerForwardTo = '',
 
     [string[]] $WinRmAllowedRemoteAddress = @('LocalSubnet'),
 
     [switch] $SkipTemplate,
-    [switch] $SkipWinRm
+    [switch] $SkipWinRm,
+    [switch] $SkipQemuInstall
 )
 
 Set-StrictMode -Version Latest
@@ -188,7 +214,77 @@ foreach ($dir in @($VmRoot, $TemplateRoot)) {
     else { Write-Host "    exists  $dir" }
 }
 
-# --- 4. Golden template -----------------------------------------------------------
+# --- 4. qemu-img ----------------------------------------------------------------
+# Resolution order: an explicitly passed -QemuImgPath (existing behaviour,
+# unchanged: throws if that exact path doesn't work); else PATH; else
+# -QemuInstallRoot, installing there if it's empty and -SkipQemuInstall wasn't
+# passed. Skipped entirely with -SkipTemplate (qemu-img is only needed to
+# build the template).
+$resolvedQemuImgPath = $QemuImgPath
+if ($SkipTemplate) {
+    Write-Step 'qemu-img (skipped, -SkipTemplate)'
+}
+elseif ($PSBoundParameters.ContainsKey('QemuImgPath')) {
+    Write-Step "qemu-img (explicit path)"
+    Write-Host "    using $QemuImgPath"
+}
+else {
+    Write-Step 'qemu-img'
+    $onPath = Get-Command 'qemu-img.exe' -ErrorAction SilentlyContinue
+    $localInstall = Join-Path $QemuInstallRoot 'qemu-img.exe'
+    if ($onPath) {
+        $resolvedQemuImgPath = $onPath.Source
+        Write-Host "    found on PATH: $resolvedQemuImgPath"
+    }
+    elseif (Test-Path -LiteralPath $localInstall) {
+        $resolvedQemuImgPath = $localInstall
+        Write-Host "    found: $resolvedQemuImgPath"
+    }
+    elseif ($SkipQemuInstall) {
+        throw "qemu-img not found on PATH or at '$localInstall'. Install QEMU for " +
+            'Windows, or pass -QemuImgPath, or drop -SkipQemuInstall to auto-install.'
+    }
+    else {
+        $setupName = "qemu-w64-setup-$QemuInstallerVersion.exe"
+        $setupUrl = "https://qemu.weilnetz.de/w64/$setupName"
+        if ($PSCmdlet.ShouldProcess($QemuInstallRoot, "Download and silently install QEMU for Windows $QemuInstallerVersion (qemu-img.exe)")) {
+            $work = Join-Path $TemplateRoot '.download'
+            New-Item -ItemType Directory -Path $work -Force | Out-Null
+            $setupPath = Join-Path $work $setupName
+            $sumPath = "$setupPath.sha512"
+
+            Write-Host "    downloading $setupUrl"
+            Invoke-WebRequest -Uri "$setupUrl.sha512" -OutFile $sumPath -UseBasicParsing
+            Invoke-WebRequest -Uri $setupUrl -OutFile $setupPath -UseBasicParsing
+
+            # Third-party build (qemu.org links it, but does not sign or host
+            # it): verified against its own published SHA-512, same as the
+            # Ubuntu image below is verified against Canonical's SHA256SUMS.
+            $sumText = Get-Content -Raw -LiteralPath $sumPath
+            $sumMatch = [regex]::Match($sumText, '[0-9a-fA-F]{128}')
+            if (-not $sumMatch.Success) { throw "No SHA-512 hex string found in $sumPath." }
+            $expected = $sumMatch.Value.ToUpperInvariant()
+            $actual = (Get-FileHash -LiteralPath $setupPath -Algorithm SHA512).Hash
+            if ($actual -ne $expected) { throw "Checksum mismatch for ${setupName}: expected $expected, got $actual." }
+            Write-Host '    checksum OK'
+
+            New-Item -ItemType Directory -Path $QemuInstallRoot -Force | Out-Null
+            # NSIS silent install: /S silent, /D=dir sets the install directory
+            # (must be the last argument, no quotes, no trailing backslash).
+            $proc = Start-Process -FilePath $setupPath -ArgumentList @('/S', "/D=$QemuInstallRoot") -Wait -PassThru
+            if ($proc.ExitCode -ne 0) { throw "QEMU installer exited with code $($proc.ExitCode)." }
+            Remove-Item -LiteralPath $setupPath, $sumPath -Force
+
+            if (-not (Test-Path -LiteralPath $localInstall)) {
+                throw "Installed QEMU to $QemuInstallRoot but qemu-img.exe isn't there. Installer layout may have changed; check $QemuInstallRoot manually."
+            }
+            $resolvedQemuImgPath = $localInstall
+            Write-Host "    installed: $resolvedQemuImgPath"
+        }
+    }
+}
+
+# --- 5. Golden template -----------------------------------------------------------
 $templatePath = Join-Path $TemplateRoot $TemplateName
 if ($SkipTemplate) {
     Write-Step 'Template (skipped)'
@@ -199,8 +295,8 @@ elseif (Test-Path -LiteralPath $templatePath) {
 }
 else {
     Write-Step "Template $templatePath"
-    if (-not (Get-Command $QemuImgPath -ErrorAction SilentlyContinue)) {
-        throw "qemu-img not found at '$QemuImgPath'. Install QEMU for Windows or pass -QemuImgPath."
+    if (-not (Get-Command $resolvedQemuImgPath -ErrorAction SilentlyContinue)) {
+        throw "qemu-img not found at '$resolvedQemuImgPath'."
     }
     if ($PSCmdlet.ShouldProcess($templatePath, "Build from Ubuntu '$UbuntuRelease' cloud image")) {
         $baseUrl = "https://cloud-images.ubuntu.com/$UbuntuRelease/current"
@@ -222,9 +318,9 @@ else {
         if ($actual -ne $expected) { throw "Checksum mismatch for ${imageName}: expected $expected, got $actual." }
         Write-Host '    checksum OK'
 
-        & $QemuImgPath convert -p -f qcow2 -O vhdx -o subformat=dynamic $imagePath $templatePath
+        & $resolvedQemuImgPath convert -p -f qcow2 -O vhdx -o subformat=dynamic $imagePath $templatePath
         if ($LASTEXITCODE -ne 0) { throw "qemu-img convert failed ($LASTEXITCODE)." }
-        & $QemuImgPath resize -f vhdx $templatePath "${TemplateSizeGB}G"
+        & $resolvedQemuImgPath resize -f vhdx $templatePath "${TemplateSizeGB}G"
         if ($LASTEXITCODE -ne 0) { throw "qemu-img resize failed ($LASTEXITCODE)." }
 
         # Parent of every VM's differencing disk: must never change in place.
@@ -234,7 +330,7 @@ else {
     }
 }
 
-# --- 5. WinRM over HTTPS for Terraform --------------------------------------------------
+# --- 6. WinRM over HTTPS for Terraform --------------------------------------------------
 if ($SkipWinRm) {
     Write-Step 'WinRM (skipped)'
 }

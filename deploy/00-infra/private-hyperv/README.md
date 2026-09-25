@@ -59,7 +59,8 @@ static address on first boot.
 
 - Windows 10/11 Pro/Enterprise/Education or Windows Server with Hyper-V, and
   about 16 GB free RAM and 200 GB free disk for the defaults.
-- QEMU for Windows (`qemu-img.exe`), to convert the Ubuntu cloud image.
+- QEMU for Windows (`qemu-img.exe`), to convert the Ubuntu cloud image. The
+  prep script installs it for you (see step 1) if it isn't already on `PATH`.
 - OpenTofu >= 1.6 (or Terraform >= 1.6).
 - An SSH key pair: `ssh-keygen -t ed25519` creates `~/.ssh/id_ed25519.pub`.
 - A local Windows account in *Hyper-V Administrators* for Terraform, e.g.:
@@ -92,6 +93,13 @@ Idempotent: re-running changes nothing that is already in place. The golden
 template (`D:\HyperV\iotee\templates\ubuntu-noble-base.vhdx`) is marked
 read-only and never rebuilt in place. To roll a new one, pass
 `-TemplateName ubuntu-noble-base-v2.vhdx` and point `template_vhdx_path` at it.
+
+If `qemu-img.exe` isn't already on `PATH`, the script downloads QEMU for
+Windows, verifies it against its published SHA-512, and installs it silently
+to `scripts\tools\qemu\` (next to the script, not Program Files; git-ignored).
+Already have it elsewhere? Pass `-QemuImgPath <path>` to use that instead and
+skip the install. `-SkipQemuInstall` fails with instructions instead of
+downloading anything.
 
 ### 2. Configure
 
