@@ -5,10 +5,10 @@ on 2026-09-24. Unnumbered draft per `docs/adr/README.md`; the number is
 assigned at merge. Makes ADR 0011 Decision 3's "must stay swappable"
 intent concrete per service, within ADR 0013's autonomy rule.
 
-Related drafts in this set: `XXXX-proposed-observability-authority.md`,
-`XXXX-proposed-tenancy-and-identity.md`,
-`XXXX-proposed-events-and-metering.md`,
-`XXXX-proposed-streaming-and-rag.md`.
+Related drafts in this set: `0015-observability-authority.md`,
+`0016-tenancy-and-identity.md`,
+`0018-events-and-metering.md`,
+`0019-streaming-and-rag.md`.
 
 ## Context
 
@@ -62,9 +62,9 @@ exists in `architecture/` for per-adapter vendor bans.
    - persistence providers (`org.hibernate..`, `org.eclipse.persistence..`,
      `org.jooq..`) only in `adapter.out.persistence`;
    - `org.keycloak..` only in the identity adapter
-     (`XXXX-proposed-tenancy-and-identity.md`);
+     (`0016-tenancy-and-identity.md`);
    - `com.stripe..` only in the payment adapter
-     (`XXXX-proposed-events-and-metering.md`);
+     (`0018-events-and-metering.md`);
    - `io.grpc..` only in `adapter.in.grpc` (and generated stubs);
    - `org.springframework.web..` only in `adapter.in.rest`.
    `domain`, `application`, and `port.*` keep the existing framework
@@ -83,8 +83,8 @@ exists in `architecture/` for per-adapter vendor bans.
   the existing vacuous rules, each needs a negative fixture proving it
   fires, and a vacuity test that fails when the adapter appears.
 - "Postgres only" means PostgreSQL-specific features (RLS per
-  `XXXX-proposed-tenancy-and-identity.md`, pgvector per
-  `XXXX-proposed-streaming-and-rag.md`) are used freely. A future Oracle
+  `0016-tenancy-and-identity.md`, pgvector per
+  `0019-streaming-and-rag.md`) are used freely. A future Oracle
   adapter would need its own equivalents; that cost belongs to that
   future decision.
 - ADR 0013's duplication rule applies: each service owns its own ports
@@ -104,8 +104,9 @@ exists in `architecture/` for per-adapter vendor bans.
 ## Cross-references
 
 ADR 0011 Decisions 1, 3, 8 and Risk 1; ADR 0012 Decisions 4, 6; ADR
-0013 Decisions 1, 2, 5, 6, 8, 9; `XXXX-proposed-tenancy-and-identity.md`
-(identity port and ban); `XXXX-proposed-events-and-metering.md`
-(messaging and payment ports); `XXXX-proposed-observability-authority.md`
-(propagation belongs in adapters); `XXXX-proposed-streaming-and-rag.md`
+0013 Decisions 1, 2, 5, 6, 8, 9; `0016-tenancy-and-identity.md`
+(identity port and ban); `0018-events-and-metering.md`
+(messaging and payment ports); `0015-observability-authority.md`
+(propagation belongs in adapters); `0019-streaming-and-rag.md`
 (pgvector as a Postgres adapter concern).
+

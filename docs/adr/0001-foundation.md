@@ -11,3 +11,4 @@ Consequences: migration requires authorized exports, measured rule/report parity
 Rejected: replacing rules from screenshots/memory; making ThingsBoard the billing engine; billing raw telemetry; browser access to raw Kafka; browser cloud-admin execution; treating a lab VM script as production Kubernetes scaffolding.
 
 M0 implementation choice: standard-library Python validates a narrow synthetic event contract and inert deployment plan. This is test scaffolding, not an ingestion service, production security boundary, schema registry, or application-stack decision. Choose runtime, storage topology, versions, and identity/vault providers after missing inputs are resolved.
+

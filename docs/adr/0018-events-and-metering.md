@@ -6,10 +6,10 @@ assigned at merge. Implements ADR 0011 Decision 6 (pay-as-you-go
 metering, optional monetization) in the Java platform; scopes, without
 overriding, ADR 0011's M3 mapping row (see "Conflicts with ADR 0011").
 
-Related drafts in this set: `XXXX-proposed-observability-authority.md`,
-`XXXX-proposed-tenancy-and-identity.md`,
-`XXXX-proposed-hexagonal-conventions.md`,
-`XXXX-proposed-streaming-and-rag.md`.
+Related drafts in this set: `0015-observability-authority.md`,
+`0016-tenancy-and-identity.md`,
+`0017-hexagonal-conventions.md`,
+`0019-streaming-and-rag.md`.
 
 ## Context
 
@@ -56,23 +56,23 @@ Kafka as replaceable (Redpanda) and payments (Stripe) as behind a port.
    `PaymentGateway` outbound port. Stripe is the first adapter behind
    it. There are **zero `com.stripe..` imports** outside that adapter
    package, enforced by the per-adapter ban in
-   `XXXX-proposed-hexagonal-conventions.md`. Monetization stays
+   `0017-hexagonal-conventions.md`. Monetization stays
    default-off and a consumer only, per ADR 0011 Decision 6.
 
 ## Consequences
 
 - Outbox, relay, and dedupe tables carry `tenant_id` and fall under RLS
-  (`XXXX-proposed-tenancy-and-identity.md`). The relay therefore needs
+  (`0016-tenancy-and-identity.md`). The relay therefore needs
   its own audited cross-tenant read path; its mechanism is C4 design.
 - Each event carries `X-Correlation-ID` and `traceparent` as Kafka
-  headers (`XXXX-proposed-observability-authority.md`). The relay must
+  headers (`0015-observability-authority.md`). The relay must
   copy them from the outbox row, not mint new ones.
 - Billing correctness depends on dedupe by `idempotency_key`, not on
   broker guarantees. A billed unit exists only once per key, however
   many deliveries occur.
 - Payment-provider egress must strip OTel baggage (observability draft).
 - Nothing in this ADR puts AI or the RAG path into financial
-  correctness (project instruction); `XXXX-proposed-streaming-and-rag.md`
+  correctness (project instruction); `0019-streaming-and-rag.md`
   consumes usage events read-only if at all.
 
 ## Conflicts with ADR 0011
@@ -102,7 +102,8 @@ Kafka as replaceable (Redpanda) and payments (Stripe) as behind a port.
 ADR 0011 Decisions 3, 4, 6 and the M3/M7 mapping rows; ADR 0012
 Decision 4 (Protobuf envelope) and Decision 5 (correlation header);
 ADR 0013 Decisions 2, 9 (contracts shared, generated per service);
-`XXXX-proposed-hexagonal-conventions.md`;
-`XXXX-proposed-tenancy-and-identity.md`;
-`XXXX-proposed-observability-authority.md`;
-`XXXX-proposed-streaming-and-rag.md`.
+`0017-hexagonal-conventions.md`;
+`0016-tenancy-and-identity.md`;
+`0015-observability-authority.md`;
+`0019-streaming-and-rag.md`.
+

@@ -5,10 +5,10 @@ on 2026-09-24. Unnumbered draft per `docs/adr/README.md`; the number is
 assigned at merge. Adds a streaming stage in front of the RAG subsystem
 that ADR 0011 Decision 1 scopes to Python.
 
-Related drafts in this set: `XXXX-proposed-observability-authority.md`,
-`XXXX-proposed-tenancy-and-identity.md`,
-`XXXX-proposed-hexagonal-conventions.md`,
-`XXXX-proposed-events-and-metering.md`.
+Related drafts in this set: `0015-observability-authority.md`,
+`0016-tenancy-and-identity.md`,
+`0017-hexagonal-conventions.md`,
+`0018-events-and-metering.md`.
 
 ## Context
 
@@ -50,18 +50,18 @@ processing runs, or which vector store is production.
 ## Consequences
 
 - pgvector rows carry `tenant_id` and fall under RLS
-  (`XXXX-proposed-tenancy-and-identity.md`); every retrieval is
+  (`0016-tenancy-and-identity.md`); every retrieval is
   tenant-scoped. The RAG agent must never retrieve across tenants.
 - pgvector keeps vector data inside the PostgreSQL backup, restore, and
   DR procedures rather than adding a separate store to recover.
 - Flink jobs must preserve `X-Correlation-ID` and `traceparent` from
   input events onto derived records and spans
-  (`XXXX-proposed-observability-authority.md`), so an insight can be
+  (`0015-observability-authority.md`), so an insight can be
   traced back to its source events. For a windowed aggregate spanning
   many source events, how correlation is represented is C-track design
   work, not decided here.
 - Flink consumes events under the broker-swap contract
-  (`XXXX-proposed-events-and-metering.md`): at-least-once and
+  (`0018-events-and-metering.md`): at-least-once and
   per-key ordering only. Windowed outputs must be idempotent to
   re-delivery.
 - Flink is JVM-based, so jobs are written in Java, consistent with ADR
@@ -103,7 +103,8 @@ processing runs, or which vector store is production.
 ADR 0011 Decisions 1, 3, 4, 7 and Risk 6; ADR 0012 Decisions 4, 5;
 ADR 0013 (the Flink job and RAG agent generate their own classes from
 `contracts/`, no shared runtime JAR);
-`XXXX-proposed-events-and-metering.md`;
-`XXXX-proposed-tenancy-and-identity.md`;
-`XXXX-proposed-observability-authority.md`;
-`XXXX-proposed-hexagonal-conventions.md`.
+`0018-events-and-metering.md`;
+`0016-tenancy-and-identity.md`;
+`0015-observability-authority.md`;
+`0017-hexagonal-conventions.md`.
+

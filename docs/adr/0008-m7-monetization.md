@@ -96,3 +96,4 @@ rest remain open, recorded in docs/billing.md.
 - Any billing data that introduces PII or payment-card scope.
 - Any infrastructure provisioning (still prohibited at this stage per
   `CLAUDE.md`).
+

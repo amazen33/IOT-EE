@@ -6,10 +6,10 @@ assigned at merge. Refines ADR 0011 Decision 5 (multi-tenancy and
 security model); supersedes the "multi-tenant by schema" wording in the
 project brief, which no merged ADR had adopted.
 
-Related drafts in this set: `XXXX-proposed-observability-authority.md`,
-`XXXX-proposed-hexagonal-conventions.md`,
-`XXXX-proposed-events-and-metering.md`,
-`XXXX-proposed-streaming-and-rag.md`.
+Related drafts in this set: `0015-observability-authority.md`,
+`0017-hexagonal-conventions.md`,
+`0018-events-and-metering.md`,
+`0019-streaming-and-rag.md`.
 
 ## Context
 
@@ -89,8 +89,8 @@ a stub (`AbacContext.alwaysPermit()`).
   endpoint. Replacing it is a precondition, not a follow-up.
 - Tests must use synthetic JWTs signed by a test key. No real IdP, no
   real tenant identifiers (constitutional rule, ADR 0011 Decision 4).
-- `pgvector` data (`XXXX-proposed-streaming-and-rag.md`) and outbox or
-  dedupe tables (`XXXX-proposed-events-and-metering.md`) carry
+- `pgvector` data (`0019-streaming-and-rag.md`) and outbox or
+  dedupe tables (`0018-events-and-metering.md`) carry
   `tenant_id` and fall under the same RLS rule.
 
 ## Resolved conflicts with ADR 0011 (repository owner, 2026-09-24)
@@ -124,6 +124,7 @@ a stub (`AbacContext.alwaysPermit()`).
 ADR 0011 Decisions 4, 5 and the M2/M4 mapping rows; ADR 0012 Decision 6
 (walking skeleton's RBAC); ADR 0013 Decisions 1, 5, 6 (per-service RBAC,
 ArchUnit enforcement, accepted duplication);
-`XXXX-proposed-hexagonal-conventions.md` (where the port and adapter
-live); `XXXX-proposed-observability-authority.md` (the principal is
+`0017-hexagonal-conventions.md` (where the port and adapter
+live); `0015-observability-authority.md` (the principal is
 never placed in baggage).
+

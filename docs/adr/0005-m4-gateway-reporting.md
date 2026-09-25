@@ -116,3 +116,4 @@ per CLAUDE.md's own milestone list, "M6 immutable evidence/resilience/DR").
 - Wiring report publication into the hash-chained evidence log (M6).
 - Any infrastructure provisioning (still prohibited at this stage per
   `CLAUDE.md`).
+

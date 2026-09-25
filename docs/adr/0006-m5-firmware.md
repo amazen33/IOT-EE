@@ -89,3 +89,4 @@ decisions scoping the firmware-specific inputs (recorded below).
   ownership (M6).
 - Any infrastructure provisioning (still prohibited at this stage per
   `CLAUDE.md`).
+

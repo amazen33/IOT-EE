@@ -392,3 +392,4 @@ source, exactly as ADR 0011 already established, whether invoked as
 | ArchUnit base rules exist and are proven | At least one rule per env-agnostic boundary named in ADR 0011 Decision 3 (e.g. no `services/*` module depends on a vendor SDK directly outside `adapters/*`); each rule has a negative test that plants a violation and asserts the build fails, mirroring `tests/test_check_script_gates.py` |
 | `services/identity`'s walking-skeleton commit passes the gate | `services/identity` (Decision 6) builds, starts, serves a health endpoint backed by `common/`'s RBAC primitive, and passes every ArchUnit rule -- documented in its own README as the walking-skeleton slice |
 | Full build is green | The complete Track B build (all modules, all tests, all ArchUnit rules) passes in one command, analogous to `python scripts/check.py`'s single-command regression gate |
+
