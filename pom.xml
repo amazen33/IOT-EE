@@ -47,6 +47,17 @@
     <!-- Required at compile time by grpc-java generated stubs on Java 9+
          (javax.annotation.Generated), per grpc-java's own README. -->
     <tomcat-annotations-api.version>6.0.53</tomcat-annotations-api.version>
+    <!-- Streaming and data plane (ADR 0019). Flink 1.20.x is the 1.x LTS
+         line and the only one with a current release of BOTH connectors
+         below (flink.apache.org/downloads: Kafka connector 3.4.0 -> 1.20.x,
+         Elasticsearch connector 3.1.0 -> 1.18-1.20.x; the 2.x line has no
+         Elasticsearch connector past 2.0). Connectors are released on their
+         own cadence, versioned <connector>-<flink minor>, so they do NOT
+         follow flink.version: bump all three together, and re-check the
+         downloads page's compatibility table when you do. -->
+    <flink.version>1.20.5</flink.version>
+    <flink-connector-kafka.version>3.4.0-1.20</flink-connector-kafka.version>
+    <flink-connector-elasticsearch.version>3.1.0-1.20</flink-connector-elasticsearch.version>
     <json-schema-validator.version>1.5.1</json-schema-validator.version>
     <cloudevents.version>3.0.0</cloudevents.version>
     <junit.version>5.10.3</junit.version>
@@ -87,6 +98,76 @@
         <version>${tomcat-annotations-api.version}</version>
         <scope>provided</scope>
       </dependency>
+
+      <!-- ================= Streaming and data plane =================
+           Version management only: no module uses these yet, and Maven
+           resolves a dependencyManagement entry only when a module
+           declares the dependency, so nothing is downloaded until then.
+
+           Flink core APIs are PROVIDED: the Flink cluster already has them
+           on its classpath, so they must stay out of the job JAR (Flink
+           docs, "Project configuration": flink-streaming-java and
+           flink-clients are not bundled). Connectors are the opposite:
+           they are NOT part of the Flink binary distribution and must be
+           packaged into the job's uber JAR, so they keep the default
+           (compile) scope here. Marking a connector provided makes the
+           job fail at runtime with ClassNotFoundException. -->
+      <dependency>
+        <groupId>org.apache.flink</groupId>
+        <artifactId>flink-streaming-java</artifactId>
+        <version>${flink.version}</version>
+        <scope>provided</scope>
+      </dependency>
+      <dependency>
+        <groupId>org.apache.flink</groupId>
+        <artifactId>flink-clients</artifactId>
+        <version>${flink.version}</version>
+        <scope>provided</scope>
+      </dependency>
+      <dependency>
+        <!-- Version only; the first job module decides its scope. -->
+        <groupId>org.apache.flink</groupId>
+        <artifactId>flink-connector-base</artifactId>
+        <version>${flink.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.apache.flink</groupId>
+        <artifactId>flink-connector-kafka</artifactId>
+        <version>${flink-connector-kafka.version}</version>
+      </dependency>
+      <!-- Elasticsearch sink connectors. NOTE: no accepted ADR places an
+           Elasticsearch store in the platform yet (ADR 0019: Flink ->
+           redaction -> pgvector; ADR 0015: logs go to LGTM/Loki). Kept
+           at the repository owner's request (2026-09-25); an ADR must
+           land before any module depends on these. -->
+      <dependency>
+        <groupId>org.apache.flink</groupId>
+        <artifactId>flink-connector-elasticsearch7</artifactId>
+        <version>${flink-connector-elasticsearch.version}</version>
+      </dependency>
+      <dependency>
+        <groupId>org.apache.flink</groupId>
+        <artifactId>flink-connector-elasticsearch8</artifactId>
+        <version>${flink-connector-elasticsearch.version}</version>
+      </dependency>
+      <!-- Elasticsearch Java client and Spring Data Elasticsearch are
+           ALREADY managed centrally by the spring-boot-dependencies BOM
+           imported above (Spring Boot 3.3.4 pins co.elastic.clients:
+           elasticsearch-java and org.elasticsearch.client:
+           elasticsearch-rest-client to 8.13.4, and spring-data-
+           elasticsearch through its spring-data-bom). They are
+           deliberately not redeclared: a second entry here would fork
+           from Spring Boot's tested set. Bump them by bumping
+           spring-boot.version.
+
+           Known interaction for the first Flink job module: because this
+           parent imports the Spring Boot BOM, Spring Boot's pinned
+           kafka-clients and elasticsearch-java versions also apply
+           there, overriding the versions the Flink connectors were built
+           against (flink-connector-kafka 3.4.0 builds with kafka-clients
+           3.4.0). Decide in that module whether to accept the override or
+           pin the connector's own client version; do not decide it
+           here, before any job exists to test against. -->
 
       <!-- The ONE intra-repo artifact any service is ever allowed to depend
            on, and only at test scope (ADR 0013 Decision 8): shared ArchUnit
