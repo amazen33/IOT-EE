@@ -25,6 +25,10 @@ Decision 7), a narrower and different thing.
   event/command envelope (ADR 0012 Decision 4). Versioned by directory
   (`v1/`); a breaking change to the envelope shape adds `v2/` alongside
   it rather than editing `v1/` in place.
+- `identity/v1/tenant_permissions.proto` -- the identity service's
+  gRPC contract (`TenantPermissionsService.GetTenantPermissions`), the
+  gRPC twin of `GET /tenants/{tenantId}/permissions` (ADR 0017
+  Decision 3). Same versioning-by-directory rule as `events/v1/`.
 - `cfg/cfg.schema.json` -- the draft `cfg.yaml` JSON Schema every
   service's own configuration is validated against (ADR 0012 Decision
   3).

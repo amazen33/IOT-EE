@@ -1,0 +1,55 @@
+// Identity service: tenant-permissions query over gRPC.
+//
+// The gRPC wire contract for the same use case the REST adapter exposes
+// as GET /tenants/{tenantId}/permissions?subjectId=... (ADR 0017
+// Decision 3: REST and gRPC are driving adapters over the SAME inbound
+// port). Source only, per contracts/README.md -- each service that
+// serves or calls this RPC generates its own classes from this file as
+// part of its own build (ADR 0013 Decision 9); nothing here is ever
+// published as a shared jar.
+//
+// Field semantics deliberately mirror the REST request exactly, so both
+// transports translate into an identical inbound query:
+//   tenant_id  <-> REST path variable {tenantId}
+//   subject_id <-> REST query parameter subjectId
+// Validation (e.g. the synthetic-tenant-id rule) happens once, in the
+// service's application layer, never in either transport adapter.
+//
+// Versioned by directory (v1/): a breaking change adds v2/ alongside
+// this file rather than editing it in place.
+syntax = "proto3";
+
+package com.iotee.platform.contracts.identity.v1;
+
+option java_package = "com.iotee.platform.contracts.identity.v1";
+option java_outer_classname = "TenantPermissionsProto";
+option java_multiple_files = true;
+
+service TenantPermissionsService {
+  // Resolves the permissions granted to a subject within a tenant.
+  // Errors: INVALID_ARGUMENT when the request fails validation (the
+  // gRPC equivalent of the REST adapter's HTTP 400).
+  rpc GetTenantPermissions(GetTenantPermissionsRequest) returns (GetTenantPermissionsResponse);
+}
+
+message GetTenantPermissionsRequest {
+  // Raw tenant identifier, exactly as the REST adapter receives it in
+  // its {tenantId} path variable. Not validated by the transport.
+  string tenant_id = 1;
+
+  // Subject whose permissions are resolved; the REST adapter's
+  // subjectId query parameter.
+  string subject_id = 2;
+}
+
+message GetTenantPermissionsResponse {
+  // Canonical (validated) tenant identifier.
+  string tenant_id = 1;
+
+  string subject_id = 2;
+
+  // Granted permission names (e.g. "TENANT_READ"). Unordered as a set;
+  // the service returns them sorted so both transports are
+  // deterministic.
+  repeated string permissions = 3;
+}

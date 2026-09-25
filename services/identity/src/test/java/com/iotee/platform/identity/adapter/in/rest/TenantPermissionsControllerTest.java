@@ -1,4 +1,4 @@
-package com.iotee.platform.identity.web;
+package com.iotee.platform.identity.adapter.in.rest;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -12,7 +12,13 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
-@SpringBootTest
+/**
+ * Full-context REST test: real component scan, real composition root
+ * ({@code config.IdentityServiceConfig}), real in-memory outbound
+ * adapter. The gRPC server binds an ephemeral port so this test never
+ * collides with a running service or another test.
+ */
+@SpringBootTest(properties = "iotee.identity.grpc.port=0")
 @AutoConfigureMockMvc
 class TenantPermissionsControllerTest {
 
@@ -29,7 +35,9 @@ class TenantPermissionsControllerTest {
                 .andExpect(content().contentType(MediaType.APPLICATION_JSON))
                 .andExpect(jsonPath("$.tenantId").value(SYNTHETIC_TENANT))
                 .andExpect(jsonPath("$.subjectId").value("synthetic-subject-admin"))
-                .andExpect(jsonPath("$.permissions.length()").value(2));
+                .andExpect(jsonPath("$.permissions.length()").value(2))
+                .andExpect(jsonPath("$.permissions[0]").value("TENANT_MANAGE"))
+                .andExpect(jsonPath("$.permissions[1]").value("TENANT_READ"));
     }
 
     @Test
@@ -53,6 +61,24 @@ class TenantPermissionsControllerTest {
     void nonSyntheticTenantIdIsRejected() throws Exception {
         mockMvc.perform(get("/tenants/{tenantId}/permissions", "tenant-prod-4471")
                         .param("subjectId", "synthetic-subject-admin"))
+                .andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void rejectedRequestBodyNeverEchoesInternalValidationDetail() throws Exception {
+        mockMvc.perform(get("/tenants/{tenantId}/permissions", "tenant-prod-4471")
+                        .param("subjectId", "synthetic-subject-admin"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.error").value("validation_failed"))
+                .andExpect(jsonPath("$.detail").value("request could not be validated"));
+    }
+
+    @Test
+    void blankSubjectIdIsRejected() throws Exception {
+        // Step C1: blank subject is invalid on every transport (see
+        // GetTenantPermissionsService's Javadoc).
+        mockMvc.perform(get("/tenants/{tenantId}/permissions", SYNTHETIC_TENANT)
+                        .param("subjectId", ""))
                 .andExpect(status().isBadRequest());
     }
 

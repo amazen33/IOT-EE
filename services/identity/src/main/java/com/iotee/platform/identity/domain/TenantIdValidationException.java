@@ -8,9 +8,10 @@ package com.iotee.platform.identity.domain;
  *
  * <p>A narrow domain-specific subtype of {@link IllegalArgumentException}
  * rather than a bare {@code IllegalArgumentException} thrown directly, so
- * that {@code services.identity.web}'s exception-handling code
- * ({@code DomainExceptionAdvice}) can catch exactly this failure and map
- * it to a 400 response, without a broad
+ * that the application layer ({@code GetTenantPermissionsService}) can
+ * catch exactly this failure and rethrow it as the inbound port's
+ * {@code InvalidQueryException} (which each driving adapter maps to its
+ * own transport status), without a broad
  * {@code catch (IllegalArgumentException)} that would also swallow an
  * unrelated {@code IllegalArgumentException} thrown by, say, a bug
  * elsewhere in the request path. In M10+, once there are other real
@@ -25,9 +26,9 @@ package com.iotee.platform.identity.domain;
  * useful to an operator) but is NOT safe to return to an HTTP client
  * as-is: it embeds {@link TenantId}'s validation regex (see
  * {@link TenantId#of(String)}), which is an internal implementation
- * detail, not API-contract information. {@code DomainExceptionAdvice}
- * deliberately does not echo {@link #getMessage()} into its response
- * body for exactly this reason.
+ * detail, not API-contract information. Neither driving adapter echoes
+ * it (or the wrapping exception's cause) to a client for exactly this
+ * reason.
  */
 public final class TenantIdValidationException extends IllegalArgumentException {
 

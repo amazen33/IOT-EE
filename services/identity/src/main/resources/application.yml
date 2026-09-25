@@ -18,6 +18,12 @@ iotee:
       # gateway-issued ID from the inbound header. See
       # CorrelationIdHandlerInterceptor's Javadoc.
       trust-boundary: true
+    grpc:
+      # gRPC driving adapter (ADR 0017 Decision 3; Track C step C1). Same
+      # use case as the REST endpoint, served on its own port. 0 binds an
+      # ephemeral port (tests); enabled: false skips starting the server.
+      enabled: true
+      port: 9091
 
 # NOTE: this application.yml is what Spring Boot itself reads at startup.
 # It is intentionally NOT the same file as contracts/cfg/cfg.schema.json

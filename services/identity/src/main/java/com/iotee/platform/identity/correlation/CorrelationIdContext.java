@@ -10,9 +10,11 @@ import java.util.UUID;
  * Spring, a servlet API, or any other framework -- it is pure {@code
  * java.lang}/{@code java.util}, usable from a plain Kafka consumer with
  * no Spring context just as easily as from an HTTP request. The Spring
- * MVC binding that calls into it, {@link CorrelationIdHandlerInterceptor},
- * lives in this same package as an ordinary framework-coupled adapter
- * around this framework-free core. (A plain-servlet-filter alternative,
+ * MVC binding that calls into it, {@code CorrelationIdHandlerInterceptor},
+ * lives in the REST adapter ({@code adapter.in.rest}) since Track C step
+ * C1 (ADR 0017 Decision 2) -- an ordinary framework-coupled adapter
+ * around this framework-free core, which driving adapters may use
+ * alongside {@code port.in}. (A plain-servlet-filter alternative,
  * {@code CorrelationIdServletFilter}, existed briefly alongside it but
  * was deleted, unwired and untested, as dead code -- S5.)
  *

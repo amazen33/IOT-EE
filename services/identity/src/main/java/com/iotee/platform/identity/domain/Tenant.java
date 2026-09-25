@@ -4,8 +4,7 @@ import java.util.Objects;
 
 /**
  * The walking skeleton's one domain object (ADR 0012 Decision 6). Holds
- * only what {@link com.iotee.platform.identity.web.TenantPermissionsController}
- * needs -- a validated identity and a display name. Real tenant state
+ * a validated identity and a display name. Real tenant state
  * (status, plan, provisioning metadata, ...) is out of scope for this
  * first commit.
  */

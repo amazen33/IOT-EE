@@ -4,24 +4,27 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 /**
- * Walking-skeleton entry point (ADR 0012 Decision 6), rebuilt per ADR
- * 0013 (microservice autonomy and contract-based sharing). This first
- * commit intentionally does the minimum needed to prove the module
- * wiring works: one domain object
- * ({@link com.iotee.platform.identity.domain.Tenant}), one endpoint
- * split into a framework-free handler
- * ({@link com.iotee.platform.identity.core.TenantPermissionsHandler})
- * and a thin Spring adapter
- * ({@link com.iotee.platform.identity.web.TenantPermissionsController}),
- * this service's OWN RBAC primitive
- * ({@link com.iotee.platform.identity.rbac.RbacRegistry}) consulted for
- * real, and the correlation-ID interceptor registered by this service's
- * own {@link com.iotee.platform.identity.web.WebMvcConfig} -- no shared
- * auto-configuration module involved; ADR 0013 retired that shared
- * wiring module, and this service now wires its own interceptor
- * directly, the way any ordinary Spring Boot application does. See this
- * module's README.md for the full list of what is and is not in scope
- * yet.
+ * Spring Boot entry point for {@code services/identity}, the M9 walking
+ * skeleton (ADR 0012 Decision 6) rebuilt per ADR 0013 and laid out per
+ * ADR 0017 (Track C step C1):
+ *
+ * <ul>
+ *   <li>{@code domain}, {@code rbac} -- framework-free business rules;</li>
+ *   <li>{@code port.in} / {@code port.out} -- inbound use-case and
+ *       outbound dependency interfaces;</li>
+ *   <li>{@code application} -- implements the inbound ports;</li>
+ *   <li>{@code adapter.in.rest}, {@code adapter.in.grpc} -- two driving
+ *       adapters over the SAME inbound port;</li>
+ *   <li>{@code adapter.out.persistence} -- in-memory stand-in for the
+ *       future Postgres adapter;</li>
+ *   <li>{@code config} -- the composition root
+ *       ({@link com.iotee.platform.identity.config.IdentityServiceConfig});</li>
+ *   <li>{@code correlation} -- framework-free correlation-ID context.</li>
+ * </ul>
+ *
+ * <p>Dependency direction is enforced by
+ * {@code IdentityHexagonalArchitectureRulesTest}. See this module's
+ * README.md for scope and verification status.
  */
 @SpringBootApplication
 public class IdentityServiceApplication {

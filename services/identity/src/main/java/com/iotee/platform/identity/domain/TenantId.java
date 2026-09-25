@@ -37,8 +37,9 @@ public final class TenantId {
      *     contains characters outside {@code [a-z0-9-]} after the prefix.
      *     A narrow subtype of {@link IllegalArgumentException} (see its
      *     own Javadoc) so callers can catch exactly this validation
-     *     failure -- {@code services.identity.web.DomainExceptionAdvice}
-     *     is what maps it to an HTTP 400 response.
+     *     failure -- the application layer rethrows it as
+     *     {@code port.in.InvalidQueryException}, which each driving
+     *     adapter maps to its transport's invalid-argument status.
      */
     public static TenantId of(String candidate) {
         if (candidate == null || !VALID_FORMAT.matcher(candidate).matches()) {

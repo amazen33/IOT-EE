@@ -50,11 +50,14 @@ Post-v1.0.0 work is scoped milestone-by-milestone. There is no M9+ roadmap yet �
 contracts/                  language-neutral contracts (.proto, OpenAPI, JSON Schema)
 architecture/               ArchUnit rule factories, test scope only (build-time shared artifact)
 services/<name>/            autonomous Java services
-  └─ domain/                 framework-free domain model (no Spring, no JPA, no HTTP)
-  └─ core/                   framework-free handler/use-case logic, calls domain/
-  └─ rbac/                   framework-free authorization primitives (roles, permissions, ABAC)
-  └─ correlation/            correlation-ID primitives + this service's own Spring adapters for them
-  └─ web/                    thin Spring adapter delegating to core/
+  └─ domain/, rbac/          framework-free business rules (no Spring, no JPA, no HTTP, no gRPC)
+  └─ port/in/, port/out/     inbound use-case / outbound dependency interfaces (ADR 0017)
+  └─ application/            implements port/in; reaches adapters only through port/out
+  └─ adapter/in/rest/        Spring MVC driving adapter over port/in
+  └─ adapter/in/grpc/        gRPC driving adapter over the SAME port/in
+  └─ adapter/out/<concern>/  driven adapters implementing port/out (vendor SDKs live only here)
+  └─ config/                 composition root (Spring wiring only)
+  └─ correlation/            framework-free correlation-ID context
 adapters/<provider>/        real-backend implementations behind contracts (M10+; none exist in Java yet)
   └─ (e.g. worm_s3)         built from spec/ patterns; isolated, optional deps
 deploy/                     Ansible, Terraform/OpenTofu, Helm, Argo CD
@@ -86,7 +89,7 @@ Contracts over libraries — communication relies on versioned schemas (Protobuf
 Standard format libraries allowed — Jackson, protobuf-java, CloudEvents SDK, etc. are ordinary per-service third-party dependencies. Do not hand-roll a serializer to "purify" a service.
 
 ### Hexagonal architecture
-Pure domain core — business rules live in a framework-free layer. No org.springframework.., jakarta.servlet.., jakarta.ws.rs.. imports in domain/, core/, or rbac/ (each has its own ArchUnit rule).
+Pure domain core — business rules live in a framework-free layer. No org.springframework.., jakarta.servlet.., jakarta.ws.rs.. imports in domain/, rbac/, port/, or application/. Ports and adapters per ADR 0017: dependencies point inward only, each driving adapter depends only on port/in, io.grpc.. only in adapter/in/grpc, org.springframework.web.. only in adapter/in/rest (ArchUnit-enforced per service; see services/identity IdentityHexagonalArchitectureRulesTest).
 
 Database independence — the domain knows nothing about PostgreSQL, JPA, or SQL. Persistence via repository interfaces (ports); implemented by infrastructure adapters. jakarta.persistence.. annotations permitted; org.hibernate.., org.eclipse.persistence.., and org.jooq.. are denied by ArchUnit rule (no persistence code exists yet, so this rule is currently vacuously satisfied, not exercised against real persistence code).
 

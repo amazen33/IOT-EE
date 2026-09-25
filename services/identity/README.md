@@ -64,50 +64,75 @@ Mechanical enforcement, both added in this refactor rather than deferred:
   package names being reintroduced even without a matching `pom.xml`
   dependency.
 
-## Package structure: `core/` vs `web/` vs `rbac/` vs `correlation/`
+## Package structure: hexagonal layout (Track C step C1, ADR 0017)
 
-Unchanged from the first commit's REST-independence split, extended to
-the relocated code:
+Step C1 re-laid this module out as ports and adapters (ADR 0017
+Decisions 1-4). Rings, inner to outer; dependencies point inward only:
 
-- `core.TenantPermissionsHandler` -- plain Java class, plain method
-  (`handle(String rawTenantId, String subjectId)`), plain return type
-  (`core.TenantPermissionsResult`). No Spring imports anywhere in `core/`
-  (enforced by `IdentityArchitectureRulesTest.identityCoreMustStayFrameworkFree`).
-  Tested with a bare JUnit test and no Spring context at all -- see
-  `TenantPermissionsHandlerTest`.
-- `web.TenantPermissionsController` -- the `@RestController` for
-  `GET /tenants/{tenantId}/permissions?subjectId=...`. Its only job is
-  translating the HTTP request into a call to
-  `TenantPermissionsHandler.handle` and mapping the result onto an HTTP
-  response; all real logic lives in `core`. `web.WebMvcConfig` registers
-  this service's own `CorrelationIdHandlerInterceptor`. `web.DomainExceptionAdvice`
-  maps `domain.TenantIdValidationException` (a validation failure thrown
-  by `TenantId.of`) to an HTTP 400 with a stable, non-leaking response
-  body -- added after CI caught the exception propagating uncaught as a
-  500 (`TenantPermissionsControllerTest.nonSyntheticTenantIdIsRejected`);
-  see that class's own Javadoc for why the response body deliberately
-  never echoes the exception's message.
-- `rbac/` -- this service's own RBAC primitives (see above). Framework-
-  free by design, and now mechanically enforced: new rule
-  `identityRbacMustStayFrameworkFree` (no `org.springframework..`),
-  mirroring the pre-existing `core/` rule, added in this refactor because
-  `rbac/` code used to live in a module (`common/`) that had its own
-  separate framework-freedom rule; now that the code lives here, the
-  guarantee has to live here too.
-- `correlation/` -- the merged correlation-id context and Spring
-  interceptor/filter (see above). No framework-freedom rule: this
-  package deliberately holds both the plain context class and its Spring
-  adapter now that there is one consumer, not two modules.
-- `envelope/`, `schema/` (test-only) -- round-trip tests against the
-  generated Protobuf envelope class and the shared `cfg.schema.json`
-  contract, both now read from this service's own generated sources /
-  the `contracts/` directory directly rather than from a shared jar.
+| Package | Contains | May depend on (inside this service) |
+| --- | --- | --- |
+| `domain` | `Tenant`, `TenantId`, `TenantIdValidationException` | nothing |
+| `rbac` | `Role`, `Permission`, `RbacRegistry`, `AbacContext`, `AbacDecision` | nothing |
+| `port.in` | `GetTenantPermissionsUseCase`, `GetTenantPermissionsQuery`, `TenantPermissionsView`, `InvalidQueryException` | nothing (JDK types only) |
+| `port.out` | `RoleAssignmentRepository` | `rbac` |
+| `application` | `GetTenantPermissionsService` (implements the inbound port; formerly `core.TenantPermissionsHandler`) | `domain`, `rbac`, `port.*` |
+| `adapter.in.rest` | `TenantPermissionsController`, `TenantPermissionsResponse`, `RestExceptionAdvice` (formerly `web.DomainExceptionAdvice`), `CorrelationIdHandlerInterceptor`, `WebMvcConfig` | `port.in`, `correlation` |
+| `adapter.in.grpc` | `TenantPermissionsGrpcService`, `GrpcServerRunner` | `port.in` |
+| `adapter.out.persistence` | `InMemoryRoleAssignmentRepository` (synthetic seed; step C4 replaces it with PostgreSQL + RLS) | `port.out`, `rbac` |
+| `config` | `IdentityServiceConfig` (composition root), `GrpcServerLifecycle` | everything |
+| `correlation` | `CorrelationIdConstants`, `CorrelationIdContext` (framework-free) | nothing |
+
+Key points:
+
+- **One inbound port, two transports.** REST
+  (`GET /tenants/{tenantId}/permissions?subjectId=...`) and gRPC
+  (`TenantPermissionsService.GetTenantPermissions`, contract in
+  `contracts/identity/v1/tenant_permissions.proto`) both build the same
+  `GetTenantPermissionsQuery` record and call the same
+  `GetTenantPermissionsUseCase`. `TransportQueryEquivalenceTest` sends
+  equivalent payloads over both real transports (MockMvc dispatch and
+  an in-process gRPC server) and asserts the port receives identical
+  query objects and both wires return identical answers.
+- **Validation lives in `application`, once.** The adapters pass wire
+  values through verbatim. `TenantId.of` failures become
+  `port.in.InvalidQueryException` (the domain exception is kept as the
+  cause, for logs); REST maps it to HTTP 400, gRPC to
+  `INVALID_ARGUMENT`, both with the same fixed client-safe text.
+- **One intentional behavior change:** a blank `subjectId` is now
+  rejected on both transports. proto3 cannot tell an absent
+  `subject_id` from `""`, so without this rule the two transports would
+  disagree (empty gRPC subject succeeding, REST rejecting a missing
+  parameter).
+- **Permissions are returned in ascending order** on both transports, so
+  responses are deterministic.
+- **Spring stays at the edge.** Nothing inside the hexagon carries a
+  Spring annotation; `config.IdentityServiceConfig` wires it with plain
+  constructors. The gRPC adapter is plain grpc-java;
+  `config.GrpcServerLifecycle` starts it with the Spring context
+  (`iotee.identity.grpc.enabled`, `iotee.identity.grpc.port`, default
+  `9091`; `0` = ephemeral, used by tests).
+- **Enforced mechanically** by `IdentityHexagonalArchitectureRulesTest`:
+  each adapter depends only on `port.in` (never on the domain, the
+  application layer, `port.out`, driven adapters, `config`, or the
+  other adapter); `domain`/`rbac`, `port.*` and `application` never
+  depend outward or on a transport/framework library; `io.grpc` only in
+  `adapter.in.grpc` and `org.springframework.web` only in
+  `adapter.in.rest` (ADR 0017 Decision 4). Every rule has a negative
+  fixture proving it fires, plus a test that every protected package
+  actually contains production classes (so no rule passes vacuously).
+- **Not yet:** correlation-ID propagation over gRPC metadata. ADR 0015
+  assigns all four correlation carriers to step C2; the REST
+  interceptor is unchanged.
+- `envelope/`, `schema/` (test-only) -- unchanged round-trip tests
+  against the generated envelope class and `contracts/cfg/cfg.schema.json`.
 
 ## Explicit non-goals (this refactor does not do this)
 
 - No behavior change to the walking skeleton's endpoint, RBAC seed data,
-  or ABAC stub -- this is a structural refactor against ADR 0013, not a
-  feature change.
+  or ABAC stub -- this is a structural refactor against ADR 0013 (and,
+  in step C1, ADR 0017), not a feature change. Step C1's only
+  intentional exceptions: blank `subjectId` is rejected, and permissions
+  are returned sorted (see the package-structure section).
 - No `TbNode`/`RuleNode`/`AbstractIntegration` code -- see
   `docs/tb-ce-inventory.md` for why (Professional/Cloud-only feature).
 - No other `services/*` business logic, and no cross-reactor "no two
@@ -130,8 +155,9 @@ this repository yet -- they are Python-only, under `spec/billing/`,
 `spec/firmware/`, etc. `allFiveSiblingIsolationRulesAreCurrentlyVacuous`
 documents this mechanically: it fails, forcing this note to be revisited,
 the day any of those five is added as a real Java `services/*` package.
-The `core` and `rbac` framework-freedom rules, and the retired-shared-
-package tripwire, are real and enforced today.
+The `application`, `domain` and `rbac` framework-freedom rules, the
+hexagonal dependency-direction rules, and the retired-shared-package
+tripwire are real and enforced today.
 
 ## Verification status
 
@@ -186,3 +212,51 @@ mechanically in this same authoring environment (no `mvn`, no Maven
 Central access) -- not yet by a real `mvn -f pom.xml verify` run. A
 fresh CI run against this branch is required before treating any of
 those items as closed, exactly as it was before CI run #84 existed.
+
+### Track C step C1 (hexagonal skeleton + gRPC adapter)
+
+Status: **blocked locally, not passed.** Maven Central
+(`repo.maven.apache.org`) is unreachable from every environment this
+step was authored in (HTTP 403 from the egress proxy), so
+`mvn -f pom.xml verify` has not run against the step C1 changes. What
+WAS checked during authoring (2026-09-25):
+
+- **Contracts:** `contracts/identity/v1/tenant_permissions.proto` and
+  `contracts/events/v1/envelope.proto` compile with the official protoc
+  25.5 binary (= `protobuf.version` 3.25.5) and generate the expected
+  message classes.
+- **Versions:** grpc-java 1.68.1 was chosen because its own v1.68.1
+  README pairs it with protoc 3.25.5 and `annotations-api` 6.0.53; not
+  assumed.
+- **Framework-free rings compile and behave:** `domain`, `rbac`,
+  `port.*`, `application`, `adapter.out.persistence`, `correlation`
+  compile with `javac --release 17 -Xlint:all` (one pre-existing
+  `serial` lint warning on `TenantIdValidationException`), and a
+  plain-Java harness passed 17/17 behavior checks (sorted permissions,
+  invalid tenant -> `InvalidQueryException` with the domain cause,
+  blank subject rejected, validation before the outbound port, ABAC
+  filtering, query-record equality, view immutability).
+- **Everything else compiles at the signature level:** all main and test
+  sources except the two tests that need generated protobuf / JSON
+  Schema classes (`EnvelopeSerializationRoundTripTest`,
+  `CfgSchemaValidationTest`, both unchanged) compile against hand-written
+  stand-ins of the Spring, gRPC, JUnit, MockMvc, Jackson and ArchUnit
+  signatures they use. This catches naming and typing errors in this
+  module's own code; it does not prove the real libraries behave as
+  assumed.
+- **ArchUnit rules evaluated on real bytecode:** every rule in
+  `IdentityHexagonalArchitectureRulesTest` and the vendor-SDK rule were
+  evaluated with `jdeps` class-level dependencies of the compiled code:
+  all hold for production classes, and every negative fixture is caught.
+  (The spring-web confinement fixture is annotation-only; `jdeps` does
+  not report CLASS-retention annotations, but ArchUnit does -- CI run
+  #84 passed an identical annotation-only fixture test.)
+- **Hygiene:** every `pom.xml` is well-formed XML; every `.java` file's
+  package declaration matches its path; no non-ASCII characters in
+  sources, protos, poms or YAML.
+- **Python gate:** `python spec/scripts/check.py` -- 437 tests, OK
+  (1 skipped, the unchanged live-S3 test); `spec/` untouched.
+
+The first real compile-and-test run of the Spring and gRPC adapters,
+the ArchUnit rules, and the equivalence suite is the CI run on this
+branch. Treat step C1 as open until that run is green.
