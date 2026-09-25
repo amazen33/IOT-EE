@@ -1,0 +1,32 @@
+# Copy to terraform.tfvars (git-ignored) and adjust to your host.
+# Credentials are NOT set here. Export them instead:
+#   $env:TF_VAR_hyperv_user     = "$env:COMPUTERNAME\iotee-tf"
+#   $secure = Read-Host -AsSecureString "Password for iotee-tf"
+#   $env:TF_VAR_hyperv_password = [System.Net.NetworkCredential]::new('', $secure).Password
+
+# Terraform running on the Hyper-V host itself.
+hyperv_host = {
+  address = "127.0.0.1"
+}
+
+# Must match the prep script's -VmRoot and -TemplateRoot/-TemplateName.
+vm_root            = "D:\\HyperV\\iotee\\vms"
+template_vhdx_path = "D:\\HyperV\\iotee\\templates\\ubuntu-noble-base.vhdx"
+
+# Must match the prep script's -SwitchName, -NatPrefix and -GatewayAddress.
+switch_name = "iotee-nat"
+network = {
+  cidr        = "10.20.0.0/24"
+  gateway     = "10.20.0.1"
+  dns_servers = ["1.1.1.1", "9.9.9.9"]
+}
+
+admin_user          = "iotee"
+ssh_public_key_path = "~/.ssh/id_ed25519.pub"
+
+# 1 control plane + 2 workers. MAC prefix 00155D is Microsoft's Hyper-V OUI.
+nodes = {
+  "rke2-master-01" = { role = "control-plane", ip_host = 10, mac = "00155D140A10", cpus = 2, memory_mb = 4096, data_disk_gb = 40 }
+  "rke2-worker-01" = { role = "worker", ip_host = 21, mac = "00155D140A21", cpus = 2, memory_mb = 4096, data_disk_gb = 60 }
+  "rke2-worker-02" = { role = "worker", ip_host = 22, mac = "00155D140A22", cpus = 2, memory_mb = 4096, data_disk_gb = 60 }
+}

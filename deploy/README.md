@@ -1,116 +1,80 @@
-# `deploy/`: private-cloud infrastructure
+# `deploy/`: private-cloud infrastructure, in layers
 
-Infrastructure-as-code for the IOT-EE private cloud: an HA **RKE2** cluster on
-**Hyper-V** VMs across two Windows hosts, with **kube-vip** for the API
-virtual IP and bare-metal LoadBalancer services. The decisions behind it are
-recorded in `docs/adr/XXXX-proposed-private-cloud-infrastructure.md`.
+Infrastructure-as-code for the IOT-EE private cloud: an **RKE2** Kubernetes
+cluster on **Hyper-V** VMs on one Windows host, with **kube-vip** for the API
+virtual IP and LoadBalancer services. The decisions behind it are recorded in
+`docs/adr/XXXX-proposed-private-cloud-infrastructure.md`.
 
-This is separate from the Java build: nothing here is read by Maven, and the
-application gates (`mvn verify`, `python spec/scripts/check.py`) do not cover
-it. It has its own static gate, `.github/workflows/infra.yml`.
+This is separate from the Java build: Maven never reads it, and the
+application gates do not cover it. It has its own static CI gate,
+`.github/workflows/infra.yml`, which cannot reach the host.
 
-| Layer | Path | Tool | Owns |
-| --- | --- | --- | --- |
-| Provisioning | `provisioning/hyperv-host/` | PowerShell | One-time host prep: Hyper-V, external vSwitch, WinRM, golden image |
-| Provisioning | `provisioning/terraform/` | OpenTofu / Terraform | VMs, disks, cloud-init seed, generated Ansible inventory |
-| Configuration | `configuration/` | Ansible | OS settings, RKE2 install/join, kube-vip, health checks, healing |
-| Cluster add-ons | `k8s/` | Kustomize | kube-vip-cloud-provider and the LoadBalancer address pool |
+| Layer | Path | Tool | Owns | Hands over |
+| --- | --- | --- | --- | --- |
+| 0 | `00-infra/private-hyperv/` | PowerShell + OpenTofu/Terraform | Hyper-V switch, NAT, template; VMs, disks, static IPs | `ansible_inventory`, `nodes_json` outputs |
+| 1 | `configuration/` | Ansible | OS settings, RKE2 install/join, kube-vip, health checks, healing | admin kubeconfig |
+| 2 | `k8s/` | Kustomize | kube-vip-cloud-provider + LoadBalancer pool | - |
 
-Terraform knows nothing about Kubernetes; Ansible knows nothing about Hyper-V
-beyond the inventory Terraform writes for it.
+Each layer knows only the previous layer's outputs: Layer 0 knows nothing
+about Kubernetes, and Layer 1 knows nothing about Hyper-V beyond the inventory.
 
-## Topology limits: read before relying on this for HA
+## Topology and its limits
 
-- **Two physical hosts cannot survive the loss of one host.** etcd needs a
-  majority of its members. With 3 servers split 2+1, losing the host with 2
-  loses quorum; with all 3 on one host, losing that host loses everything. The
-  default (3 servers on the OptiPlex, agents on the laptop) is HA against a
-  VM or process failure, not a host failure. Host-level HA needs a third
-  physical host with one server on each.
-- **Keep servers on the wired host.** Hyper-V bridges Wi-Fi by rewriting MAC
-  addresses, so kube-vip's ARP-announced VIP is unreliable behind the
-  laptop's Wi-Fi switch. Agents there are fine: they reach the VIP, they
-  don't hold it.
-- **RKE2 minimum per server:** 2 vCPU, 4 GB RAM (Terraform rejects less).
+One Hyper-V host, one control-plane node, two workers, on the private
+10.20.0.0/24 network behind Windows NAT (details and address plan in
+`00-infra/private-hyperv/README.md`).
 
-## Prerequisites
-
-On each Hyper-V host (Windows, admin PowerShell):
-- Hyper-V capable edition (Pro/Enterprise/Education).
-- QEMU for Windows (`qemu-img`), for converting the Ubuntu cloud image.
-
-On the operator workstation (or a self-hosted runner on the LAN):
-- OpenTofu >= 1.6 (or Terraform >= 1.6), Ansible (ansible-core), kubectl.
-- An SSH key pair; the public key goes into `terraform.tfvars`.
-
-Secrets, never committed:
-- `TF_VAR_hyperv_user`, `TF_VAR_hyperv_password`: a Windows account in
-  *Hyper-V Administrators* on both hosts.
-- `RKE2_TOKEN`: the cluster join secret, e.g. `openssl rand -hex 32`. Store
-  it in your password vault and reuse the same value for the life of the
-  cluster; new nodes and etcd restores need it.
+- **No control-plane HA.** When `rke2-master-01` is down, the API is down
+  (running workloads keep running). Growing to 3 control-plane nodes is a
+  Layer 0 variable change plus a Layer 1 run; the API VIP (10.20.0.5) is
+  already in place so clients don't need re-pointing.
+- **No host-level HA.** Everything is on one physical machine.
+- **Host-only reachability.** The VMs, the API VIP and LoadBalancer IPs are
+  reachable from the Hyper-V host. See "Reaching services from the LAN".
 
 ## Sequence of operations
 
-### 1. Prepare each Hyper-V host (once per host)
+### Layer 0: VMs
+
+Follow `00-infra/private-hyperv/README.md`: prepare the host once
+(`scripts/prep-hyperv-host.ps1`), `tofu apply`, then export the inventory:
 
 ```powershell
-cd deploy\provisioning\hyperv-host
-.\Initialize-HyperVHost.ps1 -NetAdapterName 'Ethernet' -VmRoot 'D:\HyperV\iotee' -ImageRoot 'D:\HyperV\images' -AllowedRemoteAddress 192.168.1.50
-.\New-BaseImage.ps1 -ImageRoot 'D:\HyperV\images'
+cd deploy\00-infra\private-hyperv
+tofu output -raw ansible_inventory | Set-Content -Encoding utf8 ..\..\configuration\inventory\generated\hosts.yml
 ```
 
-`Initialize-HyperVHost.ps1` asks before every change (`-WhatIf` to preview).
-Creating the external switch briefly drops the host's network connection.
-`New-BaseImage.ps1` verifies the Ubuntu image against Canonical's SHA256SUMS
-and writes a dated, read-only VHDX. Never edit a golden image in place: every
-VM's disk is a differencing child of it.
+### Layer 1: RKE2 with Ansible
 
-### 2. Provision the VMs
+Ansible needs a Linux control node. On the Hyper-V host, WSL 2 (Ubuntu) works:
+it reaches the 10.20.0.0/24 VMs through the host. From WSL, in the repository:
 
 ```bash
-cd deploy/provisioning/terraform
-cp terraform.tfvars.example terraform.tfvars   # set hosts, network, keys, nodes
-export TF_VAR_hyperv_user='HOST\iotee-tf' TF_VAR_hyperv_password='...'
-tofu init
-tofu plan -out plan.tfplan     # review: VMs, disks and seed ISOs per node
-tofu apply plan.tfplan
-```
-
-Each node gets a differencing disk over the golden image, a cloud-init seed
-ISO (hostname, static IP matched to its static MAC, SSH key, passwordless
-sudo, no password login) and a Gen-2 VM with Secure Boot and checkpoints
-disabled (restoring a checkpoint of an etcd member corrupts the cluster).
-Apply also writes `configuration/inventory/generated/hosts.yml`.
-
-After the first `tofu init`, commit `.terraform.lock.hcl` with hashes for
-every platform that runs Terraform:
-`tofu providers lock -platform=windows_amd64 -platform=linux_amd64`.
-
-### 3. Bootstrap RKE2 with Ansible
-
-```bash
+sudo apt-get install -y ansible-core
 cd deploy/configuration
-for ip in $(grep ansible_host inventory/generated/hosts.yml | awk '{print $2}'); do
-  ssh-keyscan -H "$ip" >> ~/.ssh/known_hosts      # verify fingerprints on first use
+for ip in 10.20.0.10 10.20.0.21 10.20.0.22; do
+  ssh-keyscan -H "$ip" >> ~/.ssh/known_hosts       # verify fingerprints on first use
 done
-export RKE2_TOKEN='...'                            # same value every run
+export RKE2_TOKEN="$(openssl rand -hex 32)"         # first run only; store it in your vault
 ansible-playbook playbooks/bootstrap.yml
 ```
 
-What it does:
+Reuse the same `RKE2_TOKEN` for every later run; new nodes and etcd restores
+need it. Settings (RKE2 version, API VIP) live in
+`configuration/playbooks/group_vars/all.yml`.
+
+What bootstrap does:
 1. **Every node:** waits for cloud-init, turns swap off, loads `overlay` and
    `br_netfilter`, sets the Kubernetes sysctls, keeps time in sync.
-2. **Servers, one at a time:** writes the kube-vip static pod, installs RKE2
-   `rke2_version` (pinned in `playbooks/group_vars/all.yml`), and either
-   initializes the cluster (first server, no VIP answering) or joins through
-   the VIP. A rebuilt first server joins; it never starts a second cluster.
-   RKE2 brings its own containerd, so there is no separate runtime to install.
-3. **Agents:** install RKE2 in agent mode and join through the VIP.
+2. **Control plane, one node at a time:** writes the kube-vip static pod and
+   installs RKE2 (pinned). The first node initializes the cluster; later ones
+   join through the VIP. A rebuilt node joins; it never starts a second
+   cluster. RKE2 brings its own containerd.
+3. **Workers:** install RKE2 in agent mode and join through the VIP.
 4. Writes an admin kubeconfig pointing at the VIP to
-   `configuration/.kube/<cluster_name>.yaml` (git-ignored).
+   `configuration/.kube/iotee-pc.yaml` (git-ignored).
 
-### 4. Cluster add-ons: LoadBalancer services
+### Layer 2: add-ons
 
 ```bash
 export KUBECONFIG=$PWD/.kube/iotee-pc.yaml
@@ -119,26 +83,35 @@ kubectl -n kube-system rollout status deploy/kube-vip-cloud-provider
 ```
 
 Smoke test: `kubectl create deployment web --image=nginx`, then
-`kubectl expose deployment web --port 80 --type LoadBalancer`, then
-`kubectl get svc web`. The EXTERNAL-IP should come from
-`k8s/kube-vip/kubevip-address-pool.yaml` and answer on the LAN.
+`kubectl expose deployment web --port 80 --type LoadBalancer`. `kubectl get svc web`
+should show an EXTERNAL-IP in 10.20.0.40-.49 that answers from the host.
+
+## Reaching services from the LAN
+
+Everything sits behind the host's NAT. Publish what you need with a static
+mapping (elevated PowerShell on the host):
+
+- **Kubernetes API:** `.\scripts\prep-hyperv-host.ps1 -ApiServerForwardTo 10.20.0.5`
+  (or 10.20.0.10). Then add the host's LAN address or name to `rke2_api_fqdn`
+  in `group_vars/all.yml` and re-run bootstrap, so the API certificate is
+  valid for it.
+- **A LoadBalancer service,** e.g. 10.20.0.40:80 published as host port 8080:
+  ```powershell
+  Add-NetNatStaticMapping -NatName iotee-nat -Protocol TCP -ExternalIPAddress 0.0.0.0 -ExternalPort 8080 -InternalIPAddress 10.20.0.40 -InternalPort 80
+  New-NetFirewallRule -DisplayName "IOT-EE web 8080" -Direction Inbound -Protocol TCP -LocalPort 8080 -Action Allow
+  ```
 
 ## Day 2
 
 ### Scaling (declared in Git)
 
-There is no Cluster Autoscaler: it needs a cloud or Cluster API provider,
-and Hyper-V has none. Node count lives in the `nodes` map in
-`terraform.tfvars`:
+There is no Cluster Autoscaler: it needs a cloud or Cluster API provider, and
+Hyper-V has none. Node count lives in Layer 0's `nodes` map:
 
-- **Add a node:** add an entry (unique name, IP, MAC), `tofu apply`, then
-  `ansible-playbook playbooks/bootstrap.yml --limit <node>`.
-- **Remove a node:** drain it (below), `kubectl delete node <node>`, remove the
-  entry, `tofu apply`.
-- Keep 1, 3 or 5 servers (Terraform enforces it).
-
-A map, not a count, so adding or removing one node never renumbers or
-rebuilds the others.
+- **Add a worker:** add an entry, `tofu apply`, re-export the inventory, then
+  `ansible-playbook playbooks/bootstrap.yml --limit rke2-worker-03`.
+- **Remove a node:** drain it (below), `kubectl delete node rke2-worker-02`,
+  remove its entry, `tofu apply`.
 
 ### Health checks (read-only, safe to schedule)
 
@@ -149,42 +122,41 @@ ansible-playbook playbooks/health.yml
 Checks per node: the RKE2 service is running, the Kubernetes Ready condition,
 root filesystem free space and available memory. For the cluster, it checks
 API `/readyz` through the VIP. Writes a JSON report to `configuration/reports/`
-and exits non-zero if anything is unhealthy, so a cron job or CI schedule can
-alert on it.
+and exits non-zero if anything is unhealthy.
 
 ### Healing (human-approved)
 
-`heal.yml` does nothing without `-e heal_confirm=yes`. Without it, it prints
-the plan. It also requires `--limit` and acts on one node at a time.
+`heal.yml` changes nothing without `-e heal_confirm=yes` (it prints the plan
+instead), requires `--limit`, and acts on one node at a time:
 
 ```bash
-ansible-playbook playbooks/heal.yml --limit rke2-agent-2 -e heal_action=restart                    # plan
-ansible-playbook playbooks/heal.yml --limit rke2-agent-2 -e heal_action=restart -e heal_confirm=yes
-ansible-playbook playbooks/heal.yml --limit rke2-agent-2 -e heal_action=drain   -e heal_confirm=yes
-ansible-playbook playbooks/heal.yml --limit rke2-agent-2 -e heal_action=uncordon -e heal_confirm=yes
-ansible-playbook playbooks/heal.yml --limit rke2-agent-2 -e heal_action=replace   # prints rebuild steps
+ansible-playbook playbooks/heal.yml --limit rke2-worker-02 -e heal_action=restart
+ansible-playbook playbooks/heal.yml --limit rke2-worker-02 -e heal_action=restart  -e heal_confirm=yes
+ansible-playbook playbooks/heal.yml --limit rke2-worker-02 -e heal_action=drain    -e heal_confirm=yes
+ansible-playbook playbooks/heal.yml --limit rke2-worker-02 -e heal_action=uncordon -e heal_confirm=yes
+ansible-playbook playbooks/heal.yml --limit rke2-worker-02 -e heal_action=replace
 ```
 
-The automatic layer is systemd's restart policy on the RKE2 units. Anything
-beyond that (restarting, draining, rebuilding a VM) is an infrastructure
-action and needs a human's explicit go-ahead, per the development contract.
-Replacing a node is never automatic: `heal_action=replace` prints the drain,
-`kubectl delete node`, `tofu apply -replace=...`, and re-bootstrap steps.
+systemd restarts RKE2 automatically. Anything beyond that is an
+infrastructure action and needs a human's explicit go-ahead, per the
+development contract. `heal_action=replace` only prints the steps: drain,
+`kubectl delete node`, a Layer 0 `tofu apply -replace=...` for the node's
+disks and VM, then re-bootstrap.
 
 ### Upgrades
 
 Change `rke2_version` in `configuration/playbooks/group_vars/all.yml` in a PR,
-then run `bootstrap.yml` for the servers first (`--limit rke2_servers`), then
-the agents. Upgrade one minor version at a time.
+then run `bootstrap.yml` for the control plane first
+(`--limit rke2_servers`), then the workers. Upgrade one minor version at a
+time.
 
 ## Verification status
 
-What the `infra.yml` CI gate checks: `tofu fmt`/`validate`, Ansible
-`--syntax-check`, PowerShell parsing, and kustomize render + kubeconform.
-While this was being written, `tofu validate` and an offline `tofu plan`
-(16 resources for the example node map) ran against the real provider
-binaries, and every variable validation was exercised.
+The `infra.yml` CI gate runs `tofu fmt` and `tofu validate` (Layer 0), Ansible
+`--syntax-check` (Layer 1), a PowerShell parse of the prep script, and a
+kustomize render + kubeconform check (Layer 2). Layer 0 was also planned
+offline while writing; see its README.
 
-**Not yet exercised against real hosts:** no VM has been created and no
-cluster bootstrapped from this code. Treat the first run on the hosts as the
-real test, one step at a time, and record the result here.
+**Not yet exercised against a real host:** no VM has been created and no
+cluster bootstrapped from this code. The first real run should go one layer at
+a time; record the result here.

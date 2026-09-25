@@ -40,7 +40,6 @@
       ansible.builtin.set_fact:
         node_health:
           node: "{{ inventory_hostname }}"
-          hyperv_host: "{{ hyperv_host | default('unknown') }}"
           unit: "{{ unit }}"
           unit_state: "{{ unit_state }}"
           ready: "{{ health_ready.stdout | default('') == 'True' }}"

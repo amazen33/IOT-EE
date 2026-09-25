@@ -1,0 +1,6 @@
+# Per-VM cloud-init seed zips built during plan/apply.
+.seed/
+# Real values (paths, IPs) stay local; commit only terraform.tfvars.example.
+terraform.tfvars
+*.auto.tfvars
+crash.log
