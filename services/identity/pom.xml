@@ -77,6 +77,19 @@
       <artifactId>slf4j-api</artifactId>
     </dependency>
 
+    <!-- JWT signature verification (adapter.out.jwt.NimbusTokenSignatureVerifier
+         only; IdentityFrameworkFreedomArchitectureRulesTest's vendor-SDK
+         denylist confines com.nimbusds to that one package, ADR 0016 Decision
+         5 / the identity ADR's rejected "hand-written JWT signature
+         verification"). The imported BOM does not manage this direct
+         dependency. Pin 9.37.4, the patched 9.x release for
+         CVE-2025-53864; review it with every dependency upgrade. -->
+    <dependency>
+      <groupId>com.nimbusds</groupId>
+      <artifactId>nimbus-jose-jwt</artifactId>
+      <version>9.37.4</version>
+    </dependency>
+
     <!-- gRPC driving adapter (adapter.in.grpc, ADR 0017 Decision 3).
          Versions come from the grpc-bom imported by the parent pom.
          grpc-netty-shaded is the server transport, runtime only: code

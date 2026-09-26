@@ -1,0 +1,5 @@
+# Synthetic fixture, deliberately invalid: schema-per-tenant was the
+# draft schema's old default and is rejected by ADR 0016 (pooled
+# tenant_id + PostgreSQL RLS). Guards against the old value creeping back.
+service_name: iotee-service-identity
+tenant_mode: schema-per-tenant

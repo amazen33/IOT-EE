@@ -18,8 +18,9 @@ import org.junit.jupiter.api.Test;
 
 /**
  * Exercises the draft cfg.yaml JSON Schema (ADR 0012 Decision 3) against
- * two synthetic fixtures, proving the schema is wired up and actually
- * enforces something -- not just present on disk.
+ * three synthetic fixtures, proving the schema is wired up and actually
+ * enforces something -- not just present on disk -- including ADR 0016's
+ * pooled-rls-only tenant_mode.
  *
  * <p>Reads {@code contracts/cfg/cfg.schema.json} directly from the
  * shared {@code contracts/} directory at the repository root, rather
@@ -71,5 +72,20 @@ class CfgSchemaValidationTest {
         Set<com.networknt.schema.ValidationMessage> errors = schema.validate(node);
 
         assertFalse(errors.isEmpty(), "expected the deliberately-invalid fixture to fail validation");
+    }
+
+    /**
+     * ADR 0016 fixes tenancy to pooled tenant_id + PostgreSQL RLS and
+     * rejects schema-per-tenant, which was this draft schema's old
+     * default. Guards against that value being accepted again.
+     */
+    @Test
+    void schemaPerTenantIsRejected() throws Exception {
+        JsonSchema schema = loadSchema();
+        JsonNode node = loadYamlFixture("cfg.sample.schema-per-tenant.yaml");
+
+        Set<com.networknt.schema.ValidationMessage> errors = schema.validate(node);
+
+        assertFalse(errors.isEmpty(), "expected tenant_mode: schema-per-tenant to be rejected (ADR 0016)");
     }
 }

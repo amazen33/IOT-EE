@@ -9,6 +9,38 @@ Spring Boot service -- generating its own Protobuf classes from a shared
 Spring configuration -- works end to end, not to be a usable identity
 service yet.
 
+## Authorization policy and tenant-scoped roles (2026-09-26)
+
+Decisions: `docs/adr/XXXX-proposed-identity-authorization-and-privileged-access.md`
+(proposed). Evidence and blocked items:
+`docs/identity-access-traceability.md`.
+
+- **Cross-tenant defect fixed.** `RbacRegistry` and
+  `RoleAssignmentRepository` were keyed by subject only, so
+  `synthetic-subject-admin` read as `TENANT_MANAGE` in every tenant.
+  Assignments are now keyed by tenant and subject. The synthetic seed
+  assigns roles in `synthetic-tenant-acme-001` only.
+- **`rbac.policy`** (framework-free, JDK only):
+  - `PolicyDecisionPoint`: deny by default, explicit deny wins, ABAC
+    attributes (audience vs tier, tier, tenant, platform vs tenant
+    resource, device, environment, entitlement, MFA strength, step-up
+    freshness, grant expiry and revocation).
+  - `GrantAuthority`: no self-grants, no operator grants, tenant admins
+    bounded by their own grants and tenant, environment-admin channel
+    grants by system admins only with approval, bounded expiry and MFA.
+  - `AccessTokenValidator`: issuer, audience, forbidden audience, client,
+    lifetime, time claims, tier/tenant consistency.
+  - `IdentityPolicyV1`: this service's policy data, version 1.
+- **Vendor denylist** now includes `org.keycloak..` and `com.stripe..`.
+- **Current C3 status:** REST and gRPC require bearer tokens and the
+  application use case enforces caller authorization. The live
+  `AbacContext.alwaysPermit()` bean is gone. Nimbus JOSE + JWT is wired
+  through an outbound port. Local `mvn -f services/identity/pom.xml verify`
+  passes 225 tests after the 2026-09-26 reconciliation fixes. A real or
+  realistic-fake issuer/JWKS signature test, persisted grants, BFF/IdP
+  sessions and production security validation remain outstanding; this
+  service must not face tenants yet.
+
 ## What changed in the ADR 0013 refactor
 
 Track B's first attempt built `common/` (RBAC, correlation-id context)
@@ -72,9 +104,9 @@ Decisions 1-4). Rings, inner to outer; dependencies point inward only:
 | Package | Contains | May depend on (inside this service) |
 | --- | --- | --- |
 | `domain` | `Tenant`, `TenantId`, `TenantIdValidationException` | nothing |
-| `rbac` | `Role`, `Permission`, `RbacRegistry`, `AbacContext`, `AbacDecision` | nothing |
+| `rbac` | `Role`, `Permission`, `RbacRegistry` (tenant-scoped), `AbacContext`, `AbacDecision`; `rbac.policy`: `PolicyDecisionPoint`, `GrantAuthority`, `AccessTokenValidator`, `IdentityPolicyV1` and their value types | nothing |
 | `port.in` | `GetTenantPermissionsUseCase`, `GetTenantPermissionsQuery`, `TenantPermissionsView`, `InvalidQueryException` | nothing (JDK types only) |
-| `port.out` | `RoleAssignmentRepository` | `rbac` |
+| `port.out` | `RoleAssignmentRepository` (lookups by tenant and subject) | `domain`, `rbac` |
 | `application` | `GetTenantPermissionsService` (implements the inbound port; formerly `core.TenantPermissionsHandler`) | `domain`, `rbac`, `port.*` |
 | `adapter.in.rest` | `TenantPermissionsController`, `TenantPermissionsResponse`, `RestExceptionAdvice` (formerly `web.DomainExceptionAdvice`), `CorrelationIdHandlerInterceptor`, `WebMvcConfig` | `port.in`, `correlation` |
 | `adapter.in.grpc` | `TenantPermissionsGrpcService`, `GrpcServerRunner` | `port.in` |
@@ -141,7 +173,10 @@ Key points:
 - No persistence beyond in-memory (`RbacRegistry`'s assignment map), and
   no persistence-provider dependency.
 - No SSO/JWT, no full RBAC/ABAC -- two roles, two permissions, an
-  always-permit ABAC stub, unchanged from the first commit.
+  always-permit ABAC stub, unchanged from the first commit. (Superseded
+  in part on 2026-09-26: roles are tenant-scoped and a framework-free
+  policy package exists; see "Authorization policy and tenant-scoped
+  roles" above. C3 bearer-token enforcement is now wired.)
 - No Migration Studio or Deployment Studio code.
 - No changes anywhere under `spec/` -- that tree is frozen except for its
   own gate (`spec/scripts/check.py`), per ADR 0012 Decision 7, ADR 0012

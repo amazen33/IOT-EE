@@ -16,6 +16,11 @@ import java.util.concurrent.TimeUnit;
  * 0017 Decision 4's per-adapter ban requires; the composition root only
  * sees this class.
  *
+ * <p>Registers {@link BearerTokenServerInterceptor} ahead of every service
+ * on this server, so {@code TenantPermissionsGrpcService} (and any future
+ * RPC added to this same server) can read the caller's bearer token from
+ * gRPC {@code Context} without extracting it from {@code Metadata} itself.
+ *
  * <p>Port {@code 0} binds an ephemeral port (tests use it); read the bound
  * port back with {@link #getPort()}. The transport is whatever grpc-java
  * finds on the runtime classpath ({@code grpc-netty-shaded}, runtime
@@ -45,6 +50,7 @@ public final class GrpcServerRunner {
         try {
             server = ServerBuilder.forPort(configuredPort)
                     .addService(tenantPermissionsService)
+                    .intercept(new BearerTokenServerInterceptor())
                     .build()
                     .start();
         } catch (IOException e) {
