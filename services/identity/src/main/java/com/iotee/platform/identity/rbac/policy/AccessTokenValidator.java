@@ -24,7 +24,8 @@ import java.util.Set;
  * <p>Precondition, not implemented here: the signature and algorithm were
  * verified against the issuer's published keys, with {@code alg=none} and
  * algorithm substitution rejected. That is the job of a verifier adapter
- * built on a vetted JOSE library; it does not exist yet.
+ * built on a vetted JOSE library; the identity service uses
+ * {@code adapter.out.jwt.NimbusTokenSignatureVerifier} for that step.
  */
 public final class AccessTokenValidator {
 

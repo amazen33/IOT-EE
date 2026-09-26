@@ -36,9 +36,10 @@ Decisions: `docs/adr/XXXX-proposed-identity-authorization-and-privileged-access.
   application use case enforces caller authorization. The live
   `AbacContext.alwaysPermit()` bean is gone. Nimbus JOSE + JWT is wired
   through an outbound port. Local `mvn -f services/identity/pom.xml verify`
-  passes 225 tests after the 2026-09-26 reconciliation fixes. A real or
-  realistic-fake issuer/JWKS signature test, persisted grants, BFF/IdP
-  sessions and production security validation remain outstanding; this
+  passes 228 tests after the 2026-09-26 reconciliation and review fixes.
+  An in-process rotating JWKS test now verifies the Nimbus adapter;
+  real-IdP and signed-token REST/gRPC tests, persisted grants, BFF/IdP
+  sessions and production security validation remain outstanding. This
   service must not face tenants yet.
 
 ## What changed in the ADR 0013 refactor

@@ -14,7 +14,7 @@ import org.junit.jupiter.api.Test;
  * Claim validation for synthetic, already-signature-verified tokens. Covers
  * admin/operator token interchange, issuer, client, lifetime and tier/tenant
  * consistency. Signature and algorithm verification are not exercised here:
- * no verifier adapter exists yet.
+ * the fake-JWKS adapter test exercises those separately.
  */
 class AccessTokenValidatorTest {
 

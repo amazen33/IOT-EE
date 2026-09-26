@@ -204,9 +204,9 @@ ratified in the first place):
   and `com.stripe..`). It pins one algorithm against a configurable JWKS
   URI, rejecting `alg=none` and algorithm substitution by construction.
   It now compiles against Nimbus 9.37.4 in the local identity Maven gate
-  (225 tests pass), but has not run against a real or realistic-fake
-  identity provider. Signature and key-selection behavior remain
-  unverified end to end until a JWKS integration test passes.
+  (228 tests pass). An in-process JWKS test proves signed acceptance,
+  unsigned/substituted/forged rejection and new-key-id rotation. A real
+  identity provider and signed-token REST/gRPC round trip remain untested.
 - Authorization for the caller is bridged live from the existing
   `RoleAssignmentRepository` (today's only grant source; there is still
   no persisted `Grant` store, so Decision 4's grant-expiry/device/

@@ -26,7 +26,8 @@ class GrantAuthorityTest {
     private static final String CHANNEL = IdentityPolicyV1.ENVIRONMENT_CHANNEL_USE;
 
     private final PolicySet policy = PolicyFixtures.evaluatorPolicy();
-    private final GrantAuthority authority = new GrantAuthority(policy, "tenant.manage_roles");
+    private final GrantAuthority authority = new GrantAuthority(policy, "tenant.manage_roles",
+            IdentityPolicyV1.ENVIRONMENT_CHANNEL_GRANT);
     private final PolicyDecisionPoint pdp = new PolicyDecisionPoint(policy);
 
     /** Tenant admin of TENANT_A holding manage_roles, telemetry and device writes for DEVICE_1, until NOW+1d. */
@@ -177,6 +178,22 @@ class GrantAuthorityTest {
                 SubjectTier.TENANT_OPERATOR, TENANT_A).permitted());
         assertTrue(decide(sysAdmin, List.of(), channelFor("synthetic-sysop-1", "synthetic-sysadmin-1"),
                 SubjectTier.PRODUCT_OPERATOR, null).permitted());
+    }
+
+    @Test
+    void privilegedGrantUsesItsOwnGrantPolicyWhenTenantDelegationPolicyChanges() {
+        PermissionPolicy tenantDelegation = PermissionPolicy.builder("tenant.manage_roles")
+                .audiences(ClientAudience.ADMIN_CONSOLE).tiers(SubjectTier.TENANT_ADMIN)
+                .minAuthStrength(AuthStrength.OTP).stepUpWithin(Duration.ofMinutes(15)).build();
+        PolicySet changed = new PolicySet(2, List.of(tenantDelegation,
+                policy.policyFor(CHANNEL).orElseThrow(),
+                policy.policyFor(IdentityPolicyV1.ENVIRONMENT_CHANNEL_GRANT).orElseThrow()), List.of());
+        GrantAuthority independent = new GrantAuthority(changed, "tenant.manage_roles",
+                IdentityPolicyV1.ENVIRONMENT_CHANNEL_GRANT);
+        GrantRequest request = new GrantRequest(productAdmin("synthetic-sysadmin-1"), List.of(),
+                channelFor("synthetic-op-1", "synthetic-sysadmin-1"), SubjectTier.TENANT_OPERATOR, TENANT_A, NOW);
+
+        assertTrue(independent.decide(request).permitted());
     }
 
     @Test

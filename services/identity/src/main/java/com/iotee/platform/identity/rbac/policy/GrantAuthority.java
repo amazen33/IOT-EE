@@ -30,14 +30,16 @@ public final class GrantAuthority {
 
     private final PolicySet policies;
     private final String delegationPermission;
+    private final String privilegedGrantPermission;
 
     /**
      * @param delegationPermission the permission a tenant admin must hold in its tenant to delegate
-     *                             (for this service, {@code tenant.manage_roles})
+     * @param privilegedGrantPermission the platform permission governing system-admin grant actions
      */
-    public GrantAuthority(PolicySet policies, String delegationPermission) {
+    public GrantAuthority(PolicySet policies, String delegationPermission, String privilegedGrantPermission) {
         this.policies = Objects.requireNonNull(policies, "policies");
         this.delegationPermission = Objects.requireNonNull(delegationPermission, "delegationPermission");
+        this.privilegedGrantPermission = Objects.requireNonNull(privilegedGrantPermission, "privilegedGrantPermission");
     }
 
     public PolicyDecision decide(GrantRequest request) {
@@ -58,20 +60,42 @@ public final class GrantAuthority {
         if (request.granteeTier().isTenantTier() != (request.granteeTenantId() != null)) {
             return PolicyDecision.deny(DecisionReason.DENY_SCOPE_MISMATCH, "grantee tier and tenant disagree", v);
         }
-        Optional<PermissionPolicy> delegationPolicy = policies.policyFor(delegationPermission);
-        if (delegationPolicy.isEmpty()) {
-            return PolicyDecision.deny(DecisionReason.DENY_UNKNOWN_PERMISSION, delegationPermission, v);
-        }
-        PolicyDecision delegationAuth = checkGrantorAuthentication(grantor, delegationPolicy.get(), request.now(), v);
-        if (delegationAuth != null) {
-            return delegationAuth;
-        }
+        boolean needsDelegation = false;
+        boolean needsPrivilegedGrant = false;
         for (String permission : proposed.permissions()) {
             Optional<PermissionPolicy> found = policies.policyFor(permission);
             if (found.isEmpty()) {
                 return PolicyDecision.deny(DecisionReason.DENY_UNKNOWN_PERMISSION, permission, v);
             }
-            PolicyDecision perPermission = checkPermission(request, found.get(), v);
+            needsPrivilegedGrant |= found.get().privilegedGrant();
+            needsDelegation |= !found.get().privilegedGrant();
+        }
+        if (needsDelegation) {
+            Optional<PermissionPolicy> delegationPolicy = policies.policyFor(delegationPermission);
+            if (delegationPolicy.isEmpty()) {
+                return PolicyDecision.deny(DecisionReason.DENY_UNKNOWN_PERMISSION, delegationPermission, v);
+            }
+            PolicyDecision delegationAuth = checkGrantorAuthentication(grantor, delegationPolicy.get(), request.now(), v);
+            if (delegationAuth != null) {
+                return delegationAuth;
+            }
+        }
+        if (needsPrivilegedGrant) {
+            if (grantor.tier() != SubjectTier.PRODUCT_ADMIN) {
+                return PolicyDecision.deny(DecisionReason.DENY_PRIVILEGED_GRANTOR, proposed.grantId(), v);
+            }
+            Optional<PermissionPolicy> grantPolicy = policies.policyFor(privilegedGrantPermission);
+            if (grantPolicy.isEmpty()) {
+                return PolicyDecision.deny(DecisionReason.DENY_UNKNOWN_PERMISSION, privilegedGrantPermission, v);
+            }
+            PolicyDecision privilegedAuth = checkGrantorAuthentication(grantor, grantPolicy.get(), request.now(), v);
+            if (privilegedAuth != null) {
+                return privilegedAuth;
+            }
+        }
+        for (String permission : proposed.permissions()) {
+            PermissionPolicy found = policies.policyFor(permission).orElseThrow();
+            PolicyDecision perPermission = checkPermission(request, found, v);
             if (perPermission != null) {
                 return perPermission;
             }

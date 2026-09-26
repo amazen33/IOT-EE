@@ -93,14 +93,14 @@ are not covered by this module.
   proving the header is never read.
 
 **Local verification after reconciliation (2026-09-26):**
-`mvn -f services/identity/pom.xml verify` passes 225 tests with no
+`mvn -f pom.xml verify` passes, including 228 identity tests with no
 failures or errors. The gate compiles `NimbusTokenSignatureVerifier`
 against the real Nimbus 9.37.4 library and executes the application,
 REST/gRPC wiring and architecture tests. The prior authoring sandbox
 could not reach Maven Central; that earlier limitation is superseded by
-this local run. No test yet uses a real or realistic-fake issuer/JWKS
-endpoint, so signed-token acceptance, algorithm pinning and key
-rotation are not proven end to end.
+this local run. An in-process JWKS test now exercises signed-token
+acceptance, signature/algorithm rejection and refresh on a new key ID.
+It does not cover a real IdP or a signed-token REST/gRPC round trip.
 
 Prior step's local verification (unchanged, for the record): the
 framework-free sources and their tests were compiled with `javac
@@ -120,7 +120,7 @@ tenant-scoped assignments. Spring, gRPC and ArchUnit tests run only in CI
 | Separate audiences; operator token rejected by admin API and the reverse (incl. multi-audience tokens) | `AccessTokenValidatorTest`: `anOperatorTokenIsRejectedByTheAdminApi`, `anAdminTokenIsRejectedByTheOperatorApi`, `aTokenCarryingBothAudiencesIsRejectedByBoth`, `aTokenFromTheOperatorClientIsRejectedByTheAdminApiEvenWithTheAdminAudience`, `anOperatorTierTokenIssuedToTheAdminAudienceIsStillRejected` | Java: unit-tested |
 | Tier and audience must agree at decision time | `PolicyDecisionPointTest.anOperatorWhoPresentsAnAdminConsoleSessionIsDenied`, `anAdminConsolePermissionIsNotExercisableFromTheOperatorConsole` | Java: unit-tested |
 | Issuer, expiry, not-before, issued-at, client (`azp`), tier/tenant consistency | `AccessTokenValidatorTest` (issuer, skew, missing claims, tenant claims) | Java: unit-tested |
-| Signature and algorithm verification against issuer keys | `adapter.out.jwt.NimbusTokenSignatureVerifier` compiles against Nimbus 9.37.4 and is wired into both live transports. No test yet verifies a real signature against an issuer/JWKS endpoint or exercises key rotation and algorithm substitution end to end. | Integration proof pending |
+| Signature and algorithm verification against issuer keys | `NimbusTokenSignatureVerifierJwksTest` runs the real Nimbus adapter against a local HTTP JWKS: valid RS256, unsigned, HS256 substitution, wrong RSA signature and a new key ID after rotation. It also passes verified claims to `AccessTokenValidator` and proves expiry is rejected there. | Locally verified with synthetic issuer; real IdP and transport round trip pending |
 | Endpoints require a validated token | Both `services/identity` REST and gRPC endpoints now require a bearer token; the permit-all `AbacContext.alwaysPermit()` bean is removed from `config.IdentityServiceConfig`. Application-layer fake-verifier tests exercise absent/forged/expired/wrong-issuer/wrong-audience/forbidden-audience/cross-tenant/revoked cases. Spring/gRPC tests pass for unauthenticated paths, but not a successfully signed token. | Locally verified for current test cases; signed-token integration pending |
 | Separate sessions per console | No BFF exists | **Not implemented** |
 | Spec | `spec/gateway/auth.py`: opaque token map, no issuer or audience concept | Spec gap (by design: IdP deferred) |
@@ -229,7 +229,7 @@ tenant-scoped assignments. Spring, gRPC and ArchUnit tests run only in CI
 
 | Case | Proven now | Still blocked (acceptance criterion) |
 | --- | --- | --- |
-| **Token interchange** | Claims level (`AccessTokenValidatorTest`, 5 cases), decision level (`PolicyDecisionPointTest`, 2 cases), and application level (`GetTenantPermissionsServiceTest`) reject absent, forged, expired, wrong-issuer, wrong-audience and forbidden-audience tokens before authorization. REST/gRPC unauthenticated and spoofed-gateway-header tests also pass locally. | Reject real IdP-signed operator tokens at admin REST/gRPC endpoints and vice versa against a real or realistic-fake JWKS. Test `alg=none` and algorithm substitution against the running verifier. |
+| **Token interchange** | Claims level (`AccessTokenValidatorTest`, 5 cases), decision level (`PolicyDecisionPointTest`, 2 cases), and application level (`GetTenantPermissionsServiceTest`) reject absent, forged, expired, wrong-issuer, wrong-audience and forbidden-audience tokens before authorization. REST/gRPC unauthenticated and spoofed-gateway-header tests pass locally. The real Nimbus adapter rejects unsigned and substituted-algorithm tokens against a synthetic JWKS. | Reject real IdP-signed operator tokens at admin REST/gRPC endpoints and vice versa through a signed-token round trip. |
 | **Cross-tenant access** | Role lookup, service and policy (`RbacRegistryTest`, `GetTenantPermissionsServiceTest.crossTenantTokenIsDenied`, `PolicyDecisionPointTest`) pass locally; REST/gRPC prove the unauthenticated path only. | With PostgreSQL RLS (ADR 0016), a query under tenant A's `app.tenant_id` returns no tenant-B rows even when application checks are bypassed; a missing `app.tenant_id` fails closed. A cross-tenant 200-vs-403 round trip through real REST/gRPC endpoints needs a signed token. |
 | **Authorization revocation** | Revoked and expired grants deny from the revocation instant; a tenant admin whose own grant is revoked cannot delegate (`GrantAuthorityTest.aTenantAdminWhoseOwnGrantWasRevokedCanNoLongerDelegate`); now also `GetTenantPermissionsServiceTest.revokedRoleAssignmentDeniesAccessOnTheNextRequest`, proving that `InMemoryRoleAssignmentRepository.revoke()` denies the very next call to this endpoint through the real authorization bridge | Revocation during an active BFF session ends that session on the next request; revocation blocks commands already queued for dispatch. Needs sessions and a command service. |
 | **Stale or replayed commands** | Spec: expiry and redelivery skip | In the Java command service: reusing an idempotency key after completion returns the original outcome without dispatching; the same key with a different value returns 409; an expired command is never delivered after reconnect; an acknowledgement not from the device's authenticated channel is rejected. The spec fails the first two and has no device binding. |
@@ -240,12 +240,11 @@ tenant-scoped assignments. Spring, gRPC and ArchUnit tests run only in CI
 
 ## Known limits of this step
 
-- **Authentication and authorization are wired on both live transports,
-  but signed-token integration remains unverified.**
-  `NimbusTokenSignatureVerifier` compiled in the local Maven gate, yet no
-  test has run it against a real or realistic-fake issuer/JWKS endpoint.
-  Signature acceptance, `alg=none` rejection, key rotation and algorithm
-  substitution still need that integration test.
+- **Authentication and authorization are wired on both live transports;
+  signed-token transport integration remains unverified.** The Nimbus
+  adapter passes an in-process rotating-JWKS test for signed acceptance,
+  unsigned/substituted/forged rejection and a new key ID. A real IdP,
+  retired-key behavior and signed-token REST/gRPC round trips remain.
 - **Only one grant source exists.** The caller's authorization is bridged
   live from its own RBAC role assignment (`RoleAssignmentRepository`);
   there is no persisted `Grant` store yet, so a `Grant`'s `notBefore`,
@@ -254,8 +253,8 @@ tenant-scoped assignments. Spring, gRPC and ArchUnit tests run only in CI
   `PolicyDecisionPointTest`. Revocation for this endpoint today means
   removing the underlying role assignment, proven by
   `GetTenantPermissionsServiceTest.revokedRoleAssignmentDeniesAccessOnTheNextRequest`.
-- `mvn -f services/identity/pom.xml verify` passes locally: 225 tests,
-  zero failures or errors. It does not replace a real issuer/JWKS test,
+- `mvn -f pom.xml verify` passes locally: 228 identity tests,
+  zero failures or errors. It does not replace a real IdP test,
   full reactor gate or production security review.
 - **No BFF, sessions, MFA-issuing IdP, or persisted audit/decision store
   exist.** This step only wires authentication and authorization for the

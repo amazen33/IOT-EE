@@ -53,9 +53,10 @@ import java.util.Set;
  * unit-tested there.
  *
  * <p><b>Verification status:</b> this class compiles against Nimbus 9.37.4
- * in the local Maven gate. No test yet exercises signature verification
- * against a real or realistic-fake issuer/JWKS endpoint, so algorithm
- * pinning and claim mapping remain unverified end to end.
+ * in the local Maven gate. An in-process JWKS test exercises signed
+ * acceptance, unsigned/substituted/forged rejection and new-key-id
+ * rotation. A real identity provider and signed-token REST/gRPC round trip
+ * remain unverified.
  */
 public final class NimbusTokenSignatureVerifier implements TokenSignatureVerifier {
 
@@ -124,10 +125,11 @@ public final class NimbusTokenSignatureVerifier implements TokenSignatureVerifie
 
         DefaultJWTProcessor<SecurityContext> defaultProcessor = new DefaultJWTProcessor<>();
         // The one and only accepted (algorithm, key source) pair -- see this class's Javadoc on
-        // algorithm pinning. No claims verifier is set here on purpose: business-rule claim
-        // validation belongs to AccessTokenValidator alone, never duplicated here.
+        // algorithm pinning. Override Nimbus's default claims verifier: issuer, audience,
+        // expiry and time policy belong to AccessTokenValidator, after signature verification.
         defaultProcessor.setJWSKeySelector(new JWSVerificationKeySelector<>(
                 JWSAlgorithm.parse(expectedAlgorithm), jwkSource));
+        defaultProcessor.setJWTClaimsSetVerifier((claimsSet, context) -> { });
         this.processor = defaultProcessor;
     }
 
