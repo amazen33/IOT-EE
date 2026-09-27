@@ -1,155 +1,79 @@
-# `deploy/`: private-cloud infrastructure, in layers
+# Deployment layers and current lab evidence
 
-Infrastructure-as-code for the IOT-EE private cloud: an **RKE2** Kubernetes
-cluster on **Hyper-V** VMs on one Windows host, with **kube-vip** for LoadBalancer
-services. The decisions behind it are recorded in
-`docs/adr/XXXX-proposed-private-cloud-infrastructure.md`.
+IOT-EE currently has two independently testable installation packages and a
+Kustomize add-on tree. Each package reads its own settings and accepts a
+documented handover from its predecessor; no package reads another layer's
+working directory or Terraform state.
 
-This is separate from the Java build: Maven never reads it, and the
-application gates do not cover it. It has its own static CI gate,
-`.github/workflows/infra.yml`, which cannot reach the host.
-
-| Layer | Path | Tool | Owns | Hands over |
+| Step | Directory | Owns | Independent check | Status |
 | --- | --- | --- | --- | --- |
-| 0 | `00-infra/private-hyperv/` | PowerShell + OpenTofu/Terraform | Hyper-V switch, NAT, template; VMs, disks, static IPs | `ansible_inventory_ini`, `nodes_json` outputs |
-| 1 | `01-k8s-engine/rke2-ansible/` | Ansible | OS prep, RKE2 engine (CIS profile, restricted PSS, secrets encryption), health checks, healing | admin kubeconfig |
-| 2 | `k8s/` | Kustomize | kube-vip (services-only) + cloud-provider + LoadBalancer pool | - |
+| Layer 0 | `00-infra/private-hyperv/` | Hyper-V host preparation, VMs, disks, network and inventory output | `powershell -NoProfile -ExecutionPolicy Bypass -File tests/verify.ps1`; optional `-RunTofu` | Package merged; its current revision has not been applied to the lab |
+| Layer 1 | `01-k8s-engine/rke2-ansible/` | Ubuntu preparation, RKE2, Canal, dedicated RKE2 data mount and health | `bash tests/verify-layer1.sh` | Package merged; its new storage path has not been applied to the lab |
+| Layer 2 | `k8s/` | kube-vip LoadBalancer add-ons | `kubectl kustomize k8s` and kubeconform in CI | Manifests exist; not applied to the lab |
+| Layer 3 | Not implemented | LGTM and OpenTelemetry Collector | Synthetic logs, metrics, traces, service graph and recovery tests required | Planned |
+| Platform services | Not implemented | Kafka and APISIX, each in its own replaceable package | Per-package install, health, security, persistence/routing and rollback tests required | Planned |
 
-Each layer knows only the previous layer's outputs: Layer 0 knows nothing
-about Kubernetes, and Layer 1 knows nothing about Hyper-V beyond the inventory.
+Layer 0 uses the pinned `windsorcli/hyperv` provider locally on the Windows
+host. Copy its whole directory to use it in another project. Its
+`scripts/deploy-layer0.ps1` produces git-ignored `out/ansible-inventory.ini`,
+`out/nodes.json` and `out/network.json`; it does not write into Layer 1.
+Layer 1 accepts an INI inventory from any compatible VM provider, with its
+real `inventory/hosts.ini` and site overrides git-ignored. Follow each
+package's README for prerequisites, review gates and installation commands.
 
-## Topology and its limits
+## Lab status and limits
 
-One Hyper-V host, one control-plane node, two workers, on the private
-10.20.0.0/24 network behind Windows NAT (details and address plan in
-`00-infra/private-hyperv/README.md`).
+On 2026-09-27, the owner and read-only checks confirmed three running
+Hyper-V VMs and RKE2 `v1.35.7+rke2r1`: one control-plane node and two
+workers were Ready, API `/readyz` was healthy, and secrets encryption was
+enabled. This is evidence of the **earlier lab installation**, not a live
+test of the newly merged standalone packages. The running cluster uses Canal
+and RKE2's bundled ingress-nginx. Its 20 GiB secondary disks are unmounted;
+RKE2 data is on each OS disk. The new Layer 1 storage policy requires an
+explicit disk of at least 40 GiB and has not been run on these nodes.
 
-- **No control-plane HA.** When `rke2-master-01` is down, the API is down
-  (running workloads keep running). Growing to 3 control-plane nodes is a
-  Layer 0 variable change plus a Layer 1 run; clients then need re-pointing
-  (or a VIP/DNS name added at that point), since the API is reached on the
-  server's own address.
-- **No host-level HA.** Everything is on one physical machine.
-- **Host-only reachability.** The VMs, the API and LoadBalancer IPs are
-  reachable from the Hyper-V host. See "Reaching services from the LAN".
+The lab is one physical Hyper-V host behind Windows NAT with one control
+plane. It has neither host nor control-plane high availability. Layer 2
+kube-vip, storage classes, a secrets backend, Kafka, APISIX, and the
+observability stack have no confirmed lab installation. None of the current
+checks establishes production capacity, HA, disaster recovery or 24/7
+operation.
 
-## Sequence of operations
+## Installation sequence and package boundaries
 
-### Layer 0: VMs
+1. **Layer 0:** run its own offline test; review a saved OpenTofu plan and
+   host capacity; install only after the infrastructure approval gate. Export
+   its inventory as a handover file.
+2. **Layer 1:** put the handover inventory in its ignored `inventory/hosts.ini`,
+   set and verify each node's `rke2_data_device`, run its own offline test and
+   inventory validation, verify SSH host keys at the VM console, then perform
+   the separately approved Ansible run. Canal is the default. RKE2 does not
+   support changing a running cluster's primary CNI in place.
+3. **Layer 2 prerequisites:** install and test the chosen LoadBalancer,
+   storage and secrets components as separate packages. `k8s/` currently
+   contains only kube-vip manifests; it does not install storage or a vault.
+4. **Layer 3 observability:** install the Collector and LGTM stack before
+   application instrumentation. Its future package must prove synthetic
+   ingest/query, a service-graph edge, access controls, retention, restart,
+   failure isolation and rollback without IOT-EE application code.
+5. **Platform services:** install Kafka and APISIX in separate version-pinned
+   packages. Kafka must prove durable produce/consume, broker recovery and
+   authorization. APISIX must prove HTTPS routing, JWT enforcement, rate
+   limiting, WebSocket/gRPC handling and rollback. Instrument both against
+   the installed observability stack. Do not mark either installed based on
+   a catalog entry or an ADR alone.
+6. **Applications:** release services only after the required platform
+   dependencies have passed their own readiness gates.
 
-Follow `00-infra/private-hyperv/README.md`: prepare the host once
-(`scripts/prep-hyperv-host.ps1`), `tofu apply`, then export the inventory:
+HAProxy is an optional external load-balancer package for a topology that
+needs it, such as a future multi-server control plane. It is not part of the
+single-host lab. RKE2 currently supplies ingress-nginx; a separate NGINX
+installation is not a default step. If APISIX and NGINX coexist, document
+their distinct traffic roles and test the handoff. Removing the bundled
+ingress requires a fresh-cluster profile or a separately reviewed migration.
 
-```powershell
-cd deploy\00-infra\private-hyperv
-tofu output -raw ansible_inventory_ini | Set-Content -Encoding utf8 ..\..\01-k8s-engine\rke2-ansible\inventory\hosts.ini
-```
-
-### Layer 1: the Kubernetes engine (RKE2, CIS-hardened)
-
-Full guide: `01-k8s-engine/rke2-ansible/README.md`. From WSL 2 (Ubuntu) on the
-Hyper-V host, in the repository:
-
-```bash
-sudo apt-get install -y ansible-core
-cd deploy/01-k8s-engine/rke2-ansible
-for ip in 10.20.0.10 10.20.0.21 10.20.0.22; do
-  ssh-keyscan -H "$ip" >> ~/.ssh/known_hosts       # verify fingerprints on first use
-done
-export RKE2_TOKEN="$(openssl rand -hex 32)"         # first run only; store it in your vault
-ansible-playbook site-rke2.yml
-```
-
-It prepares the OS on every node, installs RKE2 (pinned) with the CIS
-profile, the restricted Pod Security Standard and secrets encryption on the
-server, extracts the node token, joins the two agents with it, and writes the
-admin kubeconfig to `~/.kube/config` (a previous one is backed up). Layer 1
-installs nothing that runs *on* the cluster.
-
-### Layer 2: add-ons
-
-```bash
-kubectl apply -k deploy/k8s
-kubectl -n kube-system rollout status deploy/kube-vip-cloud-provider
-kubectl -n kube-system rollout status ds/kube-vip-ds
-```
-
-Smoke test: `kubectl create deployment web --image=nginxinc/nginx-unprivileged`,
-then `kubectl expose deployment web --port 80 --target-port 8080 --type LoadBalancer`.
-`kubectl get svc web` should show an EXTERNAL-IP in 10.20.0.40-.49 that
-answers from the host. (The stock `nginx` image runs as root and is rejected
-by the restricted Pod Security Standard, which is the point.)
-
-## Reaching services from the LAN
-
-Everything sits behind the host's NAT. Publish what you need with a static
-mapping (elevated PowerShell on the host):
-
-- **Kubernetes API:** `.\scripts\prep-hyperv-host.ps1 -ApiServerForwardTo 10.20.0.10`.
-  Then add the host's LAN address or name to `rke2_tls_san` and re-run
-  `site-rke2.yml`, so the API certificate is valid for it.
-- **A LoadBalancer service,** e.g. 10.20.0.40:80 published as host port 8080:
-  ```powershell
-  Add-NetNatStaticMapping -NatName iotee-nat -Protocol TCP -ExternalIPAddress 0.0.0.0 -ExternalPort 8080 -InternalIPAddress 10.20.0.40 -InternalPort 80
-  New-NetFirewallRule -DisplayName "IOT-EE web 8080" -Direction Inbound -Protocol TCP -LocalPort 8080 -Action Allow
-  ```
-
-## Day 2
-
-### Scaling (declared in Git)
-
-There is no Cluster Autoscaler: it needs a cloud or Cluster API provider, and
-Hyper-V has none. Node count lives in Layer 0's `nodes` map:
-
-- **Add a worker:** add an entry, `tofu apply`, re-export the inventory, then
-  `ansible-playbook site-rke2.yml --limit rke2-master-01,rke2-worker-03`.
-- **Remove a node:** drain it (below), `kubectl delete node rke2-worker-02`,
-  remove its entry, `tofu apply`.
-
-### Health checks (read-only, safe to schedule)
-
-```bash
-ansible-playbook health.yml
-```
-
-Checks per node: the RKE2 service is running, the Kubernetes Ready condition,
-root filesystem free space and available memory. For the cluster, it checks
-API `/readyz` (via kubectl on the server). Writes a JSON report to `01-k8s-engine/rke2-ansible/reports/`
-and exits non-zero if anything is unhealthy.
-
-### Healing (human-approved)
-
-`heal.yml` changes nothing without `-e heal_confirm=yes` (it prints the plan
-instead), requires `--limit`, and acts on one node at a time:
-
-```bash
-ansible-playbook heal.yml --limit rke2-worker-02 -e heal_action=restart
-ansible-playbook heal.yml --limit rke2-worker-02 -e heal_action=restart  -e heal_confirm=yes
-ansible-playbook heal.yml --limit rke2-worker-02 -e heal_action=drain    -e heal_confirm=yes
-ansible-playbook heal.yml --limit rke2-worker-02 -e heal_action=uncordon -e heal_confirm=yes
-ansible-playbook heal.yml --limit rke2-worker-02 -e heal_action=replace
-```
-
-systemd restarts RKE2 automatically. Anything beyond that is an
-infrastructure action and needs a human's explicit go-ahead, per the
-development contract. `heal_action=replace` only prints the steps: drain,
-`kubectl delete node`, a Layer 0 `tofu apply -replace=...` for the node's
-disks and VM, then `site-rke2.yml` for it.
-
-### Upgrades
-
-Change `rke2_version` in `01-k8s-engine/rke2-ansible/inventory/group_vars/all.yml`
-in a PR, then run `site-rke2.yml` for the server first (`--limit rke2_server`),
-then the workers (`--limit rke2-master-01,rke2_agent`). Upgrade one minor version at a
-time.
-
-## Verification status
-
-The `infra.yml` CI gate runs `tofu fmt` and `tofu validate` (Layer 0), Ansible
-`--syntax-check` plus an `ansible.builtin`-only check (Layer 1), a PowerShell parse of the prep script, and a
-kustomize render + kubeconform check (Layer 2). Layer 0 was also planned
-offline while writing; see its README.
-
-**Not yet exercised against a real host:** no VM has been created and no
-cluster bootstrapped from this code. The first real run should go one layer at
-a time; record the result here.
+CI runs static and offline checks only; it never applies infrastructure.
+The Layer 0 `-RunTofu` option additionally runs OpenTofu in a temporary copy.
+On the owner's Windows session, Application Control blocked `tofu.exe`, while
+the 33 default PowerShell checks passed and GitHub CI validated OpenTofu.
+That local restriction is not evidence of a failed or successful live apply.
