@@ -2,25 +2,26 @@
 #Requires -Version 5.1
 <#
 .SYNOPSIS
-  Prepares a Windows Hyper-V host for Layer 0 (deploy/00-infra/private-hyperv).
+  Prepares a Windows Hyper-V host using this self-contained Layer 0 directory.
 
 .DESCRIPTION
   Idempotent: safe to re-run; each step checks the current state first.
   Every change goes through ShouldProcess, so -WhatIf previews it and
   -Confirm:$false runs it without prompts.
 
-    1. Hyper-V      - checks the feature (enabling it needs a reboot).
-    2. Switch + NAT - Internal vSwitch, the host's gateway address on it, and a
+    1. Capacity     - checks the chosen storage volumes before any mutation.
+    2. Hyper-V      - checks the feature (enabling it needs a reboot).
+    3. Switch + NAT - Internal vSwitch, the host's gateway address on it, and a
                       Windows NAT for the VM subnet. Optional port forward to
                       the Kubernetes API.
-    3. Directories  - VM and template folders.
-    4. qemu-img     - downloads QEMU for Windows (Stefan Weil's builds, linked
+    4. Directories  - VM and template folders.
+    5. qemu-img     - downloads QEMU for Windows (Stefan Weil's builds, linked
                       from qemu.org/download; no checksum is published for
                       them, so this is HTTPS-only, not hash-verified -- see
                       the .PARAMETER QemuImgPath notes) and installs it
                       silently to -QemuInstallRoot. Skipped if qemu-img.exe is
                       already on PATH or already at -QemuInstallRoot.
-    5. Template     - downloads the Ubuntu cloud image, verifies it against
+    6. Template     - downloads the Ubuntu cloud image, verifies it against
                       Canonical's SHA256SUMS, converts it to VHDX with
                       qemu-img, grows it with Hyper-V's Resize-VHD (qemu-img
                       can convert into vhdx but not resize one), and marks it
@@ -29,10 +30,8 @@
                       that failed partway through isn't read-only, so the
                       next run detects and replaces it rather than treating
                       it as done.
-    6. WinRM HTTPS  - listener on 5986 (self-signed certificate) and a firewall
-                      rule, for the Terraform Hyper-V provider.
-
-  The defaults match terraform.tfvars.example.
+  OpenTofu uses the local Hyper-V provider; WinRM is not required or enabled.
+  Supply storage paths explicitly and use the same values in terraform.tfvars.
 
 .PARAMETER ApiServerForwardTo
   Optional. The control-plane node's address (e.g. 10.20.0.10). When set,
@@ -60,9 +59,8 @@
   found, with instructions to install it or pass -QemuImgPath.
 
 .EXAMPLE
-  .\prep-hyperv-host.ps1 -WhatIf
-  .\prep-hyperv-host.ps1
-  .\prep-hyperv-host.ps1 -ApiServerForwardTo 10.20.0.10 -WinRmAllowedRemoteAddress 192.168.1.50
+  .\prep-hyperv-host.ps1 -VmRoot 'E:\HyperV\lab\vms' -TemplateRoot 'E:\HyperV\lab\templates' -WhatIf
+  .\prep-hyperv-host.ps1 -VmRoot 'E:\HyperV\lab\vms' -TemplateRoot 'E:\HyperV\lab\templates'
 #>
 [CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
 param(
@@ -74,9 +72,14 @@ param(
     [string] $NatPrefix = '10.20.0.0/24',
     [string] $GatewayAddress = '10.20.0.1',
 
-    [string] $VmRoot = 'D:\HyperV\iotee\vms',
-    [string] $TemplateRoot = 'D:\HyperV\iotee\templates',
+    [Parameter(Mandatory = $true)][string] $VmRoot,
+    [Parameter(Mandatory = $true)][string] $TemplateRoot,
     [string] $TemplateName = 'ubuntu-noble-base.vhdx',
+
+    # Defaults reserve room for the example's 160 GB of data disks, three
+    # 30 GB OS disks, a 30 GB template, downloads, and growth headroom.
+    [ValidateRange(1, 100000)][int] $VmFreeGB = 280,
+    [ValidateRange(1, 100000)][int] $TemplateFreeGB = 40,
 
     # Ubuntu release codename. The standard (not "minimal") cloud image ships
     # the generic virtual kernel with Hyper-V drivers.
@@ -98,15 +101,13 @@ param(
 
     [string] $ApiServerForwardTo = '',
 
-    [string[]] $WinRmAllowedRemoteAddress = @('LocalSubnet'),
-
     [switch] $SkipTemplate,
-    [switch] $SkipWinRm,
     [switch] $SkipQemuInstall
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'StoragePreflight.ps1')
 
 function Write-Step([string] $Text) { Write-Host "==> $Text" -ForegroundColor Cyan }
 
@@ -114,6 +115,10 @@ $prefixParts = $NatPrefix -split '/'
 if ($prefixParts.Count -ne 2) { throw "NatPrefix must be CIDR, e.g. 10.20.0.0/24 (got '$NatPrefix')." }
 [int] $prefixLength = $prefixParts[1]
 if ($prefixLength -lt 8 -or $prefixLength -gt 30) { throw "NatPrefix length must be /8../30 (got /$prefixLength)." }
+
+# Do this before changing the host. If both roots share a volume the two
+# reservations are added, preventing a second check from double-counting space.
+Assert-Layer0StorageCapacity -VmRoot $VmRoot -TemplateRoot $TemplateRoot -VmFreeGB $VmFreeGB -TemplateFreeGB $TemplateFreeGB
 
 # --- 1. Hyper-V ----------------------------------------------------------------
 Write-Step 'Hyper-V feature'
@@ -203,7 +208,7 @@ if ($ApiServerForwardTo) {
             Add-NetNatStaticMapping -NatName $NatName -Protocol TCP -ExternalIPAddress '0.0.0.0' -ExternalPort 6443 `
                 -InternalIPAddress $ApiServerForwardTo -InternalPort 6443 | Out-Null
         }
-        $rule = 'IOT-EE Kubernetes API (NAT 6443)'
+        $rule = "$NatName Kubernetes API (NAT 6443)"
         if (-not (Get-NetFirewallRule -DisplayName $rule -ErrorAction SilentlyContinue)) {
             if ($PSCmdlet.ShouldProcess($rule, 'Allow inbound TCP 6443')) {
                 New-NetFirewallRule -DisplayName $rule -Direction Inbound -Protocol TCP -LocalPort 6443 -Action Allow | Out-Null
@@ -384,35 +389,6 @@ else {
         Set-ItemProperty -LiteralPath $templatePath -Name IsReadOnly -Value $true
         Remove-Item -LiteralPath $imagePath -Force
         Write-Host '    built and marked read-only'
-    }
-}
-
-# --- 6. WinRM over HTTPS for Terraform --------------------------------------------------
-if ($SkipWinRm) {
-    Write-Step 'WinRM (skipped)'
-}
-else {
-    Write-Step 'WinRM HTTPS listener (5986)'
-    $listener = Get-ChildItem -Path 'WSMan:\localhost\Listener' -ErrorAction SilentlyContinue |
-        Where-Object { $_.Keys -contains 'Transport=HTTPS' }
-    if (-not $listener) {
-        if ($PSCmdlet.ShouldProcess('WinRM', 'Enable HTTPS listener with a self-signed certificate')) {
-            Enable-PSRemoting -SkipNetworkProfileCheck -Force | Out-Null
-            $cert = New-SelfSignedCertificate -DnsName $env:COMPUTERNAME, 'localhost' `
-                -CertStoreLocation 'Cert:\LocalMachine\My' -NotAfter (Get-Date).AddYears(2)
-            New-Item -Path 'WSMan:\localhost\Listener' -Transport HTTPS -Address * `
-                -CertificateThumbPrint $cert.Thumbprint -Force | Out-Null
-            Write-Host "    created (certificate $($cert.Thumbprint))"
-        }
-    }
-    else { Write-Host '    exists' }
-
-    $fwRule = 'IOT-EE WinRM HTTPS (Terraform)'
-    if (-not (Get-NetFirewallRule -DisplayName $fwRule -ErrorAction SilentlyContinue)) {
-        if ($PSCmdlet.ShouldProcess($fwRule, "Allow TCP 5986 from $($WinRmAllowedRemoteAddress -join ', ')")) {
-            New-NetFirewallRule -DisplayName $fwRule -Direction Inbound -Protocol TCP -LocalPort 5986 `
-                -RemoteAddress $WinRmAllowedRemoteAddress -Action Allow | Out-Null
-        }
     }
 }
 

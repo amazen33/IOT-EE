@@ -10,18 +10,15 @@ permissions:
 # infrastructure: `tofu apply` and the Ansible playbooks are run by a human
 # (development contract: no infrastructure action without explicit approval).
 jobs:
-  terraform:
-    runs-on: ubuntu-latest
+  layer0:
+    runs-on: windows-latest
     timeout-minutes: 10
-    defaults:
-      run:
-        working-directory: deploy/00-infra/private-hyperv
     steps:
       - uses: actions/checkout@v5
       - uses: opentofu/setup-opentofu@v1
-      - run: tofu fmt -check -recursive -diff
-      - run: tofu init -backend=false -input=false
-      - run: tofu validate
+      - name: Verify standalone Layer 0
+        shell: pwsh
+        run: ./deploy/00-infra/private-hyperv/tests/verify.ps1 -RunTofu
 
   ansible:
     runs-on: ubuntu-latest
@@ -46,23 +43,6 @@ jobs:
         run: |
           bad=$(grep -rhoE '^\s+-? ?[a-z_]+\.[a-z_]+\.[a-z_]+:' site-rke2.yml health.yml heal.yml roles | grep -v 'ansible\.builtin\.' || true)
           if [ -n "$bad" ]; then echo "Non-builtin modules: $bad"; exit 1; fi
-
-  powershell:
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    steps:
-      - uses: actions/checkout@v5
-      - name: Parse the Hyper-V host prep script
-        shell: pwsh
-        run: |
-          $failed = $false
-          Get-ChildItem deploy/00-infra/private-hyperv/scripts/*.ps1 | ForEach-Object {
-            $errors = $null
-            [System.Management.Automation.Language.Parser]::ParseFile($_.FullName, [ref]$null, [ref]$errors) | Out-Null
-            if ($errors) { $failed = $true; $errors | ForEach-Object { Write-Host "::error file=$($_.Extent.File),line=$($_.Extent.StartLineNumber)::$($_.Message)" } }
-            else { Write-Host "OK $($_.Name)" }
-          }
-          if ($failed) { exit 1 }
 
   kubernetes:
     runs-on: ubuntu-latest

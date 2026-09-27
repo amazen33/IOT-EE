@@ -1,10 +1,11 @@
-# Per-VM cloud-init seed zips built during plan/apply.
+.terraform/
 .seed/
-# Real values (paths, IPs) stay local; commit only terraform.tfvars.example.
-terraform.tfvars
-*.auto.tfvars
-crash.log
-# Saved plans embed variable values, including TF_VAR_hyperv_password.
+*.tfstate*
 *.tfplan
-# QEMU for Windows, auto-installed by scripts/prep-hyperv-host.ps1.
+terraform.tfvars
+terraform.tfvars.json
+*.auto.tfvars
+*.auto.tfvars.json
+hosts.ini
+crash.log
 scripts/tools/

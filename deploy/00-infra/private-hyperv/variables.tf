@@ -1,30 +1,13 @@
 # ---------------------------------------------------------------------------
-# Hyper-V host connection (WinRM over HTTPS; prepared by scripts/prep-hyperv-host.ps1)
+# Hyper-V host connection
 # ---------------------------------------------------------------------------
-
-variable "hyperv_host" {
-  description = "Hyper-V host Terraform connects to. 127.0.0.1 when Terraform runs on the host itself."
-  type = object({
-    address  = string
-    port     = optional(number, 5986)
-    insecure = optional(bool, true) # the prep script issues a self-signed certificate
-    timeout  = optional(string, "120s")
-  })
-  default = {
-    address = "127.0.0.1"
-  }
-}
-
-variable "hyperv_user" {
-  description = "Windows account in the Hyper-V Administrators group. Set TF_VAR_hyperv_user; never commit it."
-  type        = string
-}
-
-variable "hyperv_password" {
-  description = "Password for hyperv_user. Set TF_VAR_hyperv_password; never commit it."
-  type        = string
-  sensitive   = true
-}
+#
+# No connection variables: the provider (windsorcli/hyperv) runs with
+# `backend = "local"` (see provider "hyperv" in main.tf) -- OpenTofu talks to
+# this host's own Hyper-V/WMI surface directly, as whatever account is
+# running `tofu`, which must be elevated and in Hyper-V Administrators. No
+# WinRM listener, no host/port, no separate service-account credential.
+# Run from an elevated local PowerShell session on the Hyper-V host.
 
 # ---------------------------------------------------------------------------
 # Host storage and template
