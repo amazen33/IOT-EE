@@ -65,9 +65,15 @@ map to the node roles `rke2-server` / `rke2-agent`.
   policies. Cilium is an explicit option for a **fresh** cluster after its
   requirements and policy behavior are tested. Run `guard-cni.yml` before a
   repeat deployment: RKE2 does not support changing a running cluster's
-  primary CNI. Bundled ingress-nginx remains enabled by default to match the
-  current lab; disabling it requires a fresh-cluster profile or a separate
-  reviewed ingress migration.
+  primary CNI. A fresh cluster disables RKE2's bundled ingress-nginx by
+  default; the gateway/ingress implementation belongs to a separately
+  installed and tested package. This leaves no HTTP ingress until that
+  package is installed. The current lab still runs ingress-nginx: set
+  `rke2_ingress_nginx_enabled: true` in its ignored local overrides for
+  read-only checks, and do not rerun the site play until a separate ingress
+  migration is reviewed. The guard refuses a silent change to the running
+  cluster. RKE2 documents the bundled ingress-nginx end of life in March
+  2026: https://docs.rke2.io/networking/networking_services .
 
 ## Security controls
 

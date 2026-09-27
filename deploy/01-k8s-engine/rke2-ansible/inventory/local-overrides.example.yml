@@ -28,4 +28,7 @@
 # choice; the play refuses a different CNI on a running cluster.
 # Fresh-cluster alternatives only; never change the primary CNI in place.
 # rke2_cni: cilium
-# rke2_ingress_nginx_enabled: false
+# Existing labs with the bundled chart only: set true locally so the
+# read-only guard can inspect them. Never change a running cluster's value
+# through a routine Layer 1 rerun.
+# rke2_ingress_nginx_enabled: true
