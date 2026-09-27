@@ -30,6 +30,13 @@ terraform {
       source  = "registry.terraform.io/windsorcli/hyperv"
       version = "= 0.4.0"
     }
+    # null_resource.vm_unmanaged_settings (below). Declared and pinned
+    # explicitly rather than left implicit, so the version in
+    # .terraform.lock.hcl is a reviewed choice.
+    null = {
+      source  = "hashicorp/null"
+      version = "= 3.3.2"
+    }
   }
 
   # State stays on the operator machine (*.tfstate* is git-ignored in this

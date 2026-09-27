@@ -9,3 +9,11 @@ terraform.tfvars.json
 hosts.ini
 crash.log
 scripts/tools/
+# Hand-over files and check reports (node addresses of this host).
+out/
+# VM disks, checkpoints and seed images belong under vm_root on the host,
+# never in the repository.
+*.vhdx
+*.avhdx
+*.vhd
+*.iso

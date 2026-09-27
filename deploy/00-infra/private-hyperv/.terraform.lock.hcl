@@ -2,7 +2,8 @@
 # Manual edits may be lost in future updates.
 
 provider "registry.opentofu.org/hashicorp/null" {
-  version = "3.3.2"
+  version     = "3.3.2"
+  constraints = "3.3.2"
   hashes = [
     "h1:1T+00cjQNmRAHAz9xjEBFpf5wRRb0IBuXS/W8ke5BWs=",
     "h1:46gmIYe+klib6TlHKSqEkMLjvnzVWiCB2NYA2zR8MX8=",
@@ -41,6 +42,7 @@ provider "registry.terraform.io/windsorcli/hyperv" {
   version     = "0.4.0"
   constraints = "0.4.0"
   hashes = [
+    "h1:AtF0b0SpK42kFyejbdj1pZ4tVJOemxhMHm2/pvVxFvs=",
     "h1:XUrohcqx3tEE64g+00oA2Nm10RFWHItCu1UETe9HZUw=",
     "zh:0c0a04ae4f6c2e7f3ff9738fbdde12814b64873059ed3884ff94b732fdefe1f7",
     "zh:0d46533f721e9ad3cd88ad9ef23be2ce99daad38736fc30c1acc670c193afeab",
