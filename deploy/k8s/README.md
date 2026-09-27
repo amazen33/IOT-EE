@@ -1,36 +1,64 @@
-# `deploy/k8s`
+# Layer 2: kube-vip LoadBalancer add-on
 
-Layer 2: cluster add-ons applied after the Layer 1 engine
-(`deploy/01-k8s-engine/rke2-ansible`) is up. Layer 1 installs only RKE2;
-everything that runs *on* the cluster starts here.
+This directory is a self-contained, **lab-specific** Layer 2 package. Copy
+the whole directory into another checkout to render and test it; Kustomize
+reads only local files. It consumes a working Kubernetes API and does not
+read Layer 0 state, Layer 1 inventory, or IOT-EE application configuration.
 
-| Path | What it does |
-| --- | --- |
-| `kube-vip/` | LoadBalancer Services: kube-vip-cloud-provider, the address pool (10.20.0.40-.49), and a kube-vip DaemonSet in services-only mode that announces the addresses. No control-plane VIP: clients reach the API on the server's address. |
+The package installs the v0.0.12 kube-vip cloud controller, a v1.2.4
+kube-vip DaemonSet in services-only ARP mode, RBAC, and a ConfigMap assigning
+LoadBalancer Services addresses from `10.20.0.40-10.20.0.49`. The pool and
+`eth0` interface are specific to the current Hyper-V lab; inspect them
+before using this package elsewhere. It does **not** create a control-plane
+VIP, install storage, secrets, Kafka, APISIX, observability, or any user
+application. The cloud-controller manifest is vendored from the pinned
+upstream release; its source and SHA-256 are in `kube-vip/UPSTREAM.md`.
 
-The cluster enforces the **restricted** Pod Security Standard in every
-namespace except the RKE2 system namespaces (Layer 1). Anything added here
-that needs more (host networking, capabilities) must run in `kube-system` or
-in a namespace labelled explicitly, with the reason in its PR.
+## Test this package alone
 
-## Scaling: why there is no Cluster Autoscaler
+From any working directory, with Python 3.12+ and PyYAML 6.0.3:
 
-The Kubernetes Cluster Autoscaler can only add nodes through a cloud or
-Cluster API provider, and none exists for Hyper-V. Rather than ship an
-autoscaler that cannot create a VM, node count is declared in Git:
+```bash
+python /path/to/k8s/tests/verify-layer2.py
+```
 
-1. Add (or remove) an entry in the `nodes` map of
-   `deploy/00-infra/private-hyperv/terraform.tfvars`, in a PR.
-2. After review, `tofu apply` creates (or deletes) the VM; re-export the
-   inventory from its `ansible_inventory_ini` output.
-3. From `deploy/01-k8s-engine/rke2-ansible`:
-   `ansible-playbook site-rke2.yml --limit rke2-master-01,rke2-worker-03`
-   joins it (the first server is included because it supplies the join token).
+This checks that all Kustomize resources are local, the pinned upstream
+manifest is byte-for-byte intact, resource identities are unique, the
+images and services-only mode are reviewed, and the lab address pool is
+valid. CI additionally runs `kubectl kustomize` and `kubeconform -strict` on
+the render. No test contacts a cluster or applies resources.
 
-Removing a node: drain it first (`heal.yml -e heal_action=drain` in Layer 1),
-then remove its entry. Every apply stays a human-approved step, per the
-development contract's rule that infrastructure changes need explicit
-approval.
+## Lab preflight and reviewed install
 
-Pod-level autoscaling (HorizontalPodAutoscaler) is unaffected: it needs only
-metrics-server, which RKE2 installs by default.
+The current lab has three Ready RKE2 nodes and `eth0`, but this package has
+**not** been installed. Before an apply, verify that the nodes, API, pool,
+and existing LoadBalancer controllers still match the review:
+
+```bash
+kubectl get nodes -o wide
+kubectl get pods -A --field-selector=status.phase!=Running
+kubectl -n kube-system get deploy kube-vip-cloud-provider --ignore-not-found
+kubectl -n kube-system get ds kube-vip-ds --ignore-not-found
+kubectl get svc -A -o wide
+kubectl kustomize /path/to/k8s > /tmp/layer2-reviewed.yaml
+kubectl diff -f /tmp/layer2-reviewed.yaml
+kubectl apply --dry-run=server -f /tmp/layer2-reviewed.yaml
+```
+
+Review the rendered file and diff, then apply it only through the separately
+approved infrastructure gate. After applying, wait for the cloud-controller
+Deployment and kube-vip DaemonSet to become available, create a temporary
+restricted-Pod-Security echo Service of type `LoadBalancer`, and prove it
+receives a pool address that answers from the Hyper-V host. Record the
+address, response, component logs, and cleanup. The lab's Windows NAT does
+not make that address reachable from the LAN without a separately reviewed
+NAT mapping and firewall rule.
+
+Rollback is a reviewed `kubectl delete -f` of the same rendered manifest,
+after checking whether any Services still depend on the assigned addresses.
+Removing the controller while such Services are in use causes traffic loss.
+
+The cluster has one physical host and one control plane. A successful
+LoadBalancer smoke test would prove this lab package works, not production
+high availability or disaster recovery. Storage and secrets are separate
+Layer 2 packages still to be designed and tested.

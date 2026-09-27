@@ -9,7 +9,7 @@ working directory or Terraform state.
 | --- | --- | --- | --- | --- |
 | Layer 0 | `00-infra/private-hyperv/` | Hyper-V host preparation, VMs, disks, network and inventory output | `powershell -NoProfile -ExecutionPolicy Bypass -File tests/verify.ps1`; optional `-RunTofu` | Package merged; its current revision has not been applied to the lab |
 | Layer 1 | `01-k8s-engine/rke2-ansible/` | Ubuntu preparation, RKE2, Canal, dedicated RKE2 data mount and health | `bash tests/verify-layer1.sh` | Package merged; its new storage path has not been applied to the lab |
-| Layer 2 | `k8s/` | kube-vip LoadBalancer add-ons | `kubectl kustomize k8s` and kubeconform in CI | Manifests exist; not applied to the lab |
+| Layer 2 | `k8s/` | kube-vip LoadBalancer add-on | `python k8s/tests/verify-layer2.py`, `kubectl kustomize k8s` and kubeconform in CI | Standalone lab package; not applied to the lab |
 | Layer 3 | Not implemented | LGTM and OpenTelemetry Collector | Synthetic logs, metrics, traces, service graph and recovery tests required | Planned |
 | Platform services | Not implemented | Kafka and APISIX, each in its own replaceable package | Per-package install, health, security, persistence/routing and rollback tests required | Planned |
 

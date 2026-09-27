@@ -44,6 +44,13 @@ jobs:
     timeout-minutes: 5
     steps:
       - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Install Layer 2 test dependency
+        run: python -m pip install PyYAML==6.0.3
+      - name: Verify standalone Layer 2 package
+        run: python deploy/k8s/tests/verify-layer2.py
       - name: Install kubeconform
         run: |
           curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.7.0/kubeconform-linux-amd64.tar.gz | tar xz kubeconform
