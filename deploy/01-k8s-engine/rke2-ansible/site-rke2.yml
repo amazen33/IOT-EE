@@ -1,12 +1,28 @@
 ---
 # Layer 1: the raw Kubernetes engine (RKE2, CIS profile) and nothing else.
-# Service meshes, Kafka, kube-vip and application workloads belong to Layer 2
-# (deploy/k8s) and later layers; do not add them here.
+# Cluster add-ons (Layer 2, deploy/02-cluster-addons), observability (Layer 3,
+# deploy/03-observability) and application releases (Layer 4, deploy/04-apps)
+# are separate layers; do not add them here.
 #
 #   export RKE2_TOKEN="$(openssl rand -hex 32)"   # first run only; reuse afterwards
-#   ansible-playbook site-rke2.yml
+#   ansible-playbook -i inventory/hosts.ini validate-inventory.yml
+#   ansible-playbook -i inventory/hosts.ini site-rke2.yml
 #
+# Site-specific values go in inventory/group_vars/all/local.yml or
+# inventory/host_vars/ (git-ignored), never in -e extra vars: extra vars take
+# the highest precedence and would silently override reviewed defaults.
 # Idempotent: re-running converges without restarting healthy services.
+
+- name: Inventory validation (no host contacted)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: false
+  vars:
+    inventory_validation_live: true
+  tasks:
+    - name: Same checks as validate-inventory.yml, plus no documentation addresses
+      ansible.builtin.import_tasks: tasks/validate-inventory.yml
 
 - name: Preflight
   hosts: rke2_cluster
@@ -26,16 +42,30 @@
         quiet: true
       # No no_log: an assert prints only the expression and fail_msg, never the value.
 
-    - name: Require exactly the expected groups
+    - name: Require an explicit RKE2 data device for every node
       ansible.builtin.assert:
         that:
-          - groups['rke2_server'] | default([]) | length in [1, 3, 5]
-          - groups['rke2_agent'] | default([]) | length >= 1
-        fail_msg: "Inventory needs 1, 3 or 5 hosts in [rke2_server] (etcd quorum) and at least 1 in [rke2_agent]."
+          - hostvars[item].rke2_data_device is defined
+          - hostvars[item].rke2_data_device | length > 0
+        fail_msg: >-
+          Set rke2_data_device for {{ item }} in ignored site inventory after
+          identifying the dedicated disk. RKE2 must not silently use the OS disk.
+        quiet: true
+      loop: "{{ groups['rke2_cluster'] }}"
+
+- name: Refuse an in-place primary CNI change
+  hosts: rke2_server
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Guard the primary CNI selection
+      ansible.builtin.import_tasks: tasks/guard-cni.yml
+
 
 - name: Prepare every node's OS
   hosts: rke2_cluster
   become: true
+  serial: 1  # each blank data disk requires its own interactive confirmation
   roles:
     - os_prep
 

@@ -1,18 +1,25 @@
 ---
-# Node remediation. Changes nothing unless heal_confirm=yes: the development
-# contract forbids infrastructure actions without explicit human approval.
-# Always target nodes explicitly with --limit.
+# Node remediation. The development contract forbids infrastructure actions
+# without explicit human approval, so every run needs three things:
+#   1. an explicit target:       --limit <node>
+#   2. exactly one action tag:   --tags restart | drain | uncordon | replace
+#   3. an interactive, per-node confirmation: type the node's name when asked.
 #
-#   Dry run (default): prints the plan
-#     ansible-playbook heal.yml --limit rke2-worker-02 -e heal_action=restart
-#   Execute:
-#     ansible-playbook heal.yml --limit rke2-worker-02 -e heal_action=restart -e heal_confirm=yes
+#   ansible-playbook -i inventory/hosts.ini heal.yml --limit rke2-worker-02 --tags restart
+#   ansible-playbook -i inventory/hosts.ini heal.yml --limit rke2-worker-02 --tags drain
+#   ansible-playbook -i inventory/hosts.ini heal.yml --limit rke2-worker-02 --tags uncordon
+#   ansible-playbook -i inventory/hosts.ini heal.yml --limit rke2-worker-02 --tags replace   # prints steps only
 #
-# heal_action:
+# The action is a tag, not an -e extra var: extra vars have the highest
+# precedence in Ansible and are not used for privileged switches here. The
+# confirmation guards against mistakes by an operator who already holds
+# host access; it is not a control against that operator.
+#
+# Actions:
 #   restart  - restart the node's RKE2 service and wait for Ready
 #   drain    - cordon + drain the node (evicts its pods) before maintenance
 #   uncordon - return a drained node to service
-#   replace  - never automatic: prints the Terraform + Ansible steps to rebuild
+#   replace  - never automatic: prints the OpenTofu + Ansible steps to rebuild
 
 - name: Remediate
   hosts: rke2_cluster
@@ -20,31 +27,43 @@
   gather_facts: false
   serial: 1            # one node at a time; never two etcd members at once
   vars:
-    heal_action: ""
-    heal_confirm: "no"
+    heal_actions: ['restart', 'drain', 'uncordon', 'replace']
     heal_drain_timeout: "300s"
     unit: "{{ 'rke2-server' if inventory_hostname in groups['rke2_server'] else 'rke2-agent' }}"
     # Run kubectl from a server other than the node being healed.
     kubectl_on: "{{ groups['rke2_server'] | difference([inventory_hostname]) | first | default(groups['rke2_server'][0]) }}"
     kubectl: /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml
-    confirmed: "{{ heal_confirm | string | lower in ['yes', 'true'] }}"
   tasks:
-    - name: Require an explicit target and a known action
+    - name: Require an explicit target and exactly one action tag
       ansible.builtin.assert:
         that:
           - ansible_limit is defined
-          - heal_action in ['restart', 'drain', 'uncordon', 'replace']
+          - ansible_run_tags | length == 1
+          - ansible_run_tags[0] in heal_actions
         fail_msg: >-
-          Pass --limit <node> and -e heal_action=restart|drain|uncordon|replace.
+          Pass --limit <node> and exactly one of --tags {{ heal_actions | join(' | ') }}.
+          Got tags {{ ansible_run_tags }}.
       run_once: true
+      tags: [always]
 
-    - name: Plan (dry run -- add -e heal_confirm=yes to execute)
-      ansible.builtin.debug:
-        msg: "Would {{ heal_action }} {{ inventory_hostname }} ({{ unit }}), using kubectl on {{ kubectl_on }}."
-      when: not confirmed and heal_action != 'replace'
+    - name: Confirm {{ ansible_run_tags[0] }} on {{ inventory_hostname }}
+      ansible.builtin.pause:
+        prompt: >-
+          About to {{ ansible_run_tags[0] }} {{ inventory_hostname }} ({{ unit }}),
+          using kubectl on {{ kubectl_on }}. Type the node name to confirm,
+          anything else aborts
+      register: heal_typed_confirmation
+      tags: [restart, drain, uncordon]
+
+    - name: Abort unless the node name was typed
+      ansible.builtin.assert:
+        that:
+          - (heal_typed_confirmation.user_input | default('') | trim) == inventory_hostname
+        fail_msg: "Not confirmed; nothing was changed on {{ inventory_hostname }}."
+      tags: [restart, drain, uncordon]
 
     - name: Restart the RKE2 service
-      when: confirmed and heal_action == 'restart'
+      tags: [never, restart]
       block:
         - name: Restart {{ unit }}
           ansible.builtin.systemd_service:
@@ -63,7 +82,7 @@
           changed_when: false
 
     - name: Cordon and drain
-      when: confirmed and heal_action == 'drain'
+      tags: [never, drain]
       ansible.builtin.command: >-
         {{ kubectl }} drain {{ inventory_hostname }}
         --ignore-daemonsets --delete-emptydir-data --timeout={{ heal_drain_timeout }}
@@ -71,17 +90,17 @@
       changed_when: true
 
     - name: Uncordon
-      when: confirmed and heal_action == 'uncordon'
+      tags: [never, uncordon]
       ansible.builtin.command: "{{ kubectl }} uncordon {{ inventory_hostname }}"
       delegate_to: "{{ kubectl_on }}"
       changed_when: true
 
     - name: Replacement steps (manual, by design)
-      when: heal_action == 'replace'
+      tags: [never, replace]
       ansible.builtin.debug:
         msg:
-          - "1. Drain: ansible-playbook heal.yml --limit {{ inventory_hostname }} -e heal_action=drain -e heal_confirm=yes"
+          - "1. Drain: ansible-playbook -i inventory/hosts.ini heal.yml --limit {{ inventory_hostname }} --tags drain"
           - "2. Remove from Kubernetes (for a server this also removes its etcd member): kubectl delete node {{ inventory_hostname }}"
-          - "3. Rebuild the VM (fresh OS and data disks): tofu -chdir=deploy/00-infra/private-hyperv apply -replace='hyperv_vhd.os[\"{{ inventory_hostname }}\"]' -replace='hyperv_vhd.data[\"{{ inventory_hostname }}\"]' -replace='hyperv_machine_instance.vm[\"{{ inventory_hostname }}\"]'"
+          - "3. Rebuild the VM and its data disk from your Layer 0 provider's current documented procedure. Review the plan and preserve any needed data first."
           - "   Single-server cluster and this is the server? Steps 1-2 do not apply: rebuilding it means restoring etcd from a snapshot (rke2 server --cluster-reset --cluster-reset-restore-path=...), see README.md."
-          - "4. Re-join: ssh-keyscan the new host key, then ansible-playbook site-rke2.yml --limit {{ groups['rke2_server'][0] }},{{ inventory_hostname }}"
+          - "4. Re-join: ssh-keyscan the new host key, validate the inventory, then ansible-playbook -i inventory/hosts.ini site-rke2.yml --limit {{ groups['rke2_server'][0] }},{{ inventory_hostname }}"

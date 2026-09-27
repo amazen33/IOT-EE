@@ -1,0 +1,19 @@
+---
+# CI-only negative test for the live-run inventory rule: the same checks
+# site-rke2.yml runs in its first play (inventory_validation_live: true),
+# on localhost only. Run against the example inventory it MUST fail, because
+# the example uses RFC 5737 documentation addresses that a live run rejects.
+# Contacts no host. The live flag is set here at play level, never with -e.
+#
+#   ansible-playbook -i inventory/hosts.example.ini tests/validate-inventory-live.yml   # expected to fail
+
+- name: Validate the inventory as site-rke2.yml does before a live run
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: false
+  vars:
+    inventory_validation_live: true
+  tasks:
+    - name: Structural checks plus the documentation-address rule
+      ansible.builtin.import_tasks: ../tasks/validate-inventory.yml

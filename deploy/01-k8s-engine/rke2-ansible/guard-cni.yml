@@ -1,0 +1,9 @@
+---
+# Read-only preflight to check a live cluster without running site-rke2.yml.
+- name: Verify the installed primary CNI matches the reviewed choice
+  hosts: rke2_server
+  gather_facts: false
+  become: true
+  tasks:
+    - name: Guard the primary CNI selection
+      ansible.builtin.import_tasks: tasks/guard-cni.yml
