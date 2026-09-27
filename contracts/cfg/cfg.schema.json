@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://iotee.example/schema/contracts/cfg/cfg.schema.json",
   "title": "IOT-EE platform service configuration (draft)",
-  "description": "Draft JSON Schema for a services/* module's cfg.yaml (ADR 0012 Decision 3). Lives under contracts/ (ADR 0013): a shared contract artifact, source only -- every service validates its own cfg.yaml against this same file directly, never through a shared runtime library. Intentionally minimal: only the fields every service is already expected to have (tenant scoping mode and a correlation-id policy toggle). NOT the final schema -- see the Non-goals note in services/identity/README.md. Extend this file, in its own reviewed change, as real configuration surface is added.",
+  "description": "Draft JSON Schema for a services/* module's cfg.yaml (ADR 0012 Decision 3). Lives under contracts/ (ADR 0013): a shared contract artifact, source only -- every service validates its own cfg.yaml against this same file directly, never through a shared runtime library. Intentionally minimal: only the fields every service is already expected to have (tenant scoping mode, fixed by ADR 0016, and a correlation-id policy toggle). NOT the final schema -- see the Non-goals note in services/identity/README.md. Extend this file, in its own reviewed change, as real configuration surface is added.",
   "type": "object",
   "additionalProperties": false,
   "required": ["service_name", "tenant_mode"],
@@ -14,8 +14,8 @@
     },
     "tenant_mode": {
       "type": "string",
-      "description": "How this service scopes data by tenant. \"schema-per-tenant\" matches the PostgreSQL multi-tenant-by-schema architecture; \"shared-schema\" is reserved for a future service that has an explicit, reviewed reason to differ.",
-      "enum": ["schema-per-tenant", "shared-schema"]
+      "description": "How this service scopes tenant-owned data. \"pooled-rls\" is the only accepted mode (ADR 0016 Decisions 1-2): every tenant-owned row carries a non-null tenant_id, isolation is enforced first by the service's ABAC tenant check and second by PostgreSQL Row-Level Security with ENABLE + FORCE ROW LEVEL SECURITY and SET LOCAL app.tenant_id per transaction. Schema-per-tenant was rejected by ADR 0016; any other mode requires a new ADR, not an edit here.",
+      "enum": ["pooled-rls"]
     },
     "correlation_id": {
       "type": "object",

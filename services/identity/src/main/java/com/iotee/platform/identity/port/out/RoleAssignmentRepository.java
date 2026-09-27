@@ -1,5 +1,6 @@
 package com.iotee.platform.identity.port.out;
 
+import com.iotee.platform.identity.domain.TenantId;
 import com.iotee.platform.identity.rbac.Permission;
 import java.util.Set;
 
@@ -14,6 +15,10 @@ import java.util.Set;
  */
 public interface RoleAssignmentRepository {
 
-    /** Permissions granted to {@code subjectId} by role; empty if the subject has no role. */
-    Set<Permission> permissionsFor(String subjectId);
+    /**
+     * Permissions granted to {@code subjectId} by its role in {@code tenantId};
+     * empty if the subject has no role in that tenant. Assignments never carry
+     * across tenants (ADR 0016 Decision 6).
+     */
+    Set<Permission> permissionsFor(TenantId tenantId, String subjectId);
 }

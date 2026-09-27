@@ -1,3 +1,3 @@
-# Synthetic fixture -- exercises common/src/main/resources/schema/cfg.schema.json.
+# Synthetic fixture -- exercises contracts/cfg/cfg.schema.json.
 service_name: iotee-service-identity
-tenant_mode: schema-per-tenant
+tenant_mode: pooled-rls
