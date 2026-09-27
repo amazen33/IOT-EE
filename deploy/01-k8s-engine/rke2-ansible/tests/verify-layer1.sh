@@ -3,16 +3,17 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 export ANSIBLE_CONFIG="$PWD/ansible.cfg"
 
-if git ls-files --error-unmatch inventory/hosts.ini >/dev/null 2>&1; then
+if command -v git >/dev/null && git rev-parse --is-inside-work-tree >/dev/null 2>&1 && git ls-files --error-unmatch inventory/hosts.ini >/dev/null 2>&1; then
   echo 'Real inventory/hosts.ini must not be tracked' >&2
   exit 1
 fi
 
-for playbook in validate-inventory.yml guard-cni.yml site-rke2.yml health.yml heal.yml tests/validate-inventory-live.yml; do
+for playbook in validate-inventory.yml guard-cni.yml site-rke2.yml health.yml heal.yml tests/validate-inventory-live.yml tests/check-defaults.yml; do
   ansible-playbook --syntax-check -i inventory/hosts.example.ini "$playbook" >/dev/null
 done
 
 ansible-playbook -i inventory/hosts.example.ini validate-inventory.yml >/dev/null
+ansible-playbook -i inventory/hosts.example.ini tests/check-defaults.yml >/dev/null
 for inventory in tests/inventories/bad-*.ini; do
   if ansible-playbook -i "$inventory" validate-inventory.yml >/dev/null 2>&1; then
     echo "Invalid inventory was accepted: $inventory" >&2

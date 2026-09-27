@@ -54,7 +54,7 @@
     fail_msg: >-
       {{ item }} has {{ hostvars[item].ansible_host }}, a documentation
       address from the example inventory. Generate inventory/hosts.ini from
-      Layer 0's output before a live run.
+      a compatible provider's output or edit the example before a live run.
     quiet: true
   loop: "{{ inv_cluster }}"
   when: inventory_validation_live | default(false) | bool

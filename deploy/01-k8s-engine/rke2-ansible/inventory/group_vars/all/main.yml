@@ -16,7 +16,7 @@ rke2_version: "v1.35.7+rke2r1"
 rke2_cni: canal
 rke2_ingress_nginx_enabled: true
 
-# RKE2's data directory must live on the dedicated Layer 0 disk before install.
+# RKE2's data directory must live on a dedicated disk before install.
 # Set the actual device in ignored inventory/group_vars/all/local.yml or
 # inventory/host_vars/<node>.yml after verifying it with lsblk. A blank disk
 # additionally requires interactive approval on every first format.
@@ -30,7 +30,7 @@ rke2_data_min_size_gb: 40
 # the first server, which also pins the cluster CA.
 rke2_token: "{{ lookup('ansible.builtin.env', 'RKE2_TOKEN') }}"
 
-# Address each node registers with (Layer 0 gives every VM one static NIC).
+# Address each node registers with (the inventory supplies ansible_host).
 rke2_node_ip: "{{ ansible_host }}"
 
 # Name for the cluster in the exported kubeconfig.

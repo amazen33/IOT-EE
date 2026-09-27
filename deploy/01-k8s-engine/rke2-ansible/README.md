@@ -23,7 +23,7 @@ Layer 2  deploy/02-cluster-addons           add-ons (kube-vip LB, …)
 | `inventory/group_vars/all/main.yml` | Reviewed defaults: pinned `rke2_version`, `rke2_token` (from `$RKE2_TOKEN`), `cluster_name` | yes |
 | `inventory/group_vars/all/local.yml`, `inventory/host_vars/` | Site-specific, non-secret overrides (start from `inventory/local-overrides.example.yml`) | **no** (git-ignored) |
 | `validate-inventory.yml`, `tasks/validate-inventory.yml` | Inventory checks run before any host is contacted | yes |
-| `tests/inventories/bad-*.ini` | Negative fixtures CI proves are rejected | yes |
+| `tests/verify-layer1.sh`, `tests/check-defaults.yml`, `tests/inventories/bad-*.ini` | Standalone offline test entry point, profile/template assertions, and rejected inventory fixtures | yes |
 | `site-rke2.yml` | inventory validation → preflight → `os_prep` (all) → `rke2_server` (serial 1) → `rke2_agent` | yes |
 | `guard-cni.yml`, `tasks/guard-cni.yml` | read-only check that refuses a CNI switch on an existing server | yes |
 | `roles/os_prep/tasks/data_disk.yml` | validates and mounts an explicit disk before RKE2 installation; asks before formatting a blank disk | yes |
@@ -40,8 +40,8 @@ map to the node roles `rke2-server` / `rke2-agent`.
 
 - Node addresses and groups live **only** in the inventory,
   `inventory/group_vars/` and `inventory/host_vars/` -- never in
-  `ansible.cfg`. No dynamic inventory plugin is approved yet; Layer 0's
-  generated INI is the approved source.
+  `ansible.cfg`. No dynamic inventory plugin is approved yet; any compatible
+  VM provider may supply the INI inventory.
 - The real inventory, private addresses and local overrides stay out of
   Git (see `.gitignore`); CI fails if `inventory/hosts.ini` is committed.
 - **Validate before every run:** `validate-inventory.yml` checks 1, 3 or 5
@@ -94,7 +94,7 @@ cd /path/to/rke2-ansible
 export ANSIBLE_CONFIG="$PWD/ansible.cfg"  # needed on WSL /mnt/d mounts
 
 # 1. Put the real inventory in inventory/hosts.ini (git-ignored). Export it
-#    from a compatible infrastructure layer, or copy and edit the example.
+#    from any compatible VM provider, or copy and edit the example.
 #    Copy inventory/local-overrides.example.yml to
 #    inventory/group_vars/all/local.yml and set rke2_data_device after lsblk.
 
@@ -137,6 +137,16 @@ certificate (when using `prep-hyperv-host.ps1 -ApiServerForwardTo`), copy
 
 ## Verify the hardening yourself
 
+Run the package's offline tests from any working directory, including when
+this folder is copied outside the IOT-EE repository:
+
+```bash
+bash /path/to/rke2-ansible/tests/verify-layer1.sh
+```
+
+The script needs `ansible-core` and Bash; it uses only files in this folder,
+never contacts a node, and needs no Layer 0 checkout or Terraform state.
+
 ```bash
 ansible -i inventory/hosts.ini rke2_server -b -m ansible.builtin.command -a '/usr/local/bin/rke2 secrets-encrypt status'
 kubectl run psa-probe --image=busybox --restart=Never --privileged -- sleep 1   # must be REJECTED (restricted PSS)
@@ -162,12 +172,14 @@ changes nothing unless you type the node's name at the prompt (a
 non-interactive run aborts). The action is a tag rather than an `-e` extra
 var on purpose.
 
-- **Add a worker:** add it to Layer 0's `nodes`, `tofu apply`, regenerate
-  `inventory/hosts.ini`, validate it, then
-  `ansible-playbook -i inventory/hosts.ini site-rke2.yml --limit rke2-master-01,rke2-worker-03`
+- **Add a worker:** provision a compatible Ubuntu VM with a dedicated data
+  disk, add its address to `inventory/hosts.ini`, set its verified
+  `rke2_data_device` in ignored host vars, validate the inventory, then run
+  `site-rke2.yml` with the first server and new worker in `--limit` (the
+  first server supplies the node token).
   (the first server must be in the limit: it supplies the node token).
-- **Upgrade:** change `rke2_version` in `inventory/group_vars/all/main.yml`
-  and its entry in `deploy/catalog/tools.yaml` in one PR; run
+- **Upgrade:** change the pinned `rke2_version` in
+  `inventory/group_vars/all/main.yml` through review; run
   `--limit rke2_server` first, then `--limit rke2-master-01,rke2_agent`.
   One minor version at a time.
 - **Grow to HA:** 3 hosts in `[rke2_server]` (validation accepts 1, 3 or 5);

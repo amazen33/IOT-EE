@@ -1,0 +1,31 @@
+---
+# Offline contract test: default CNI and server template agree without a node.
+- name: Check Layer 1 default profile
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: false
+  vars_files:
+    - ../inventory/group_vars/all/main.yml
+  vars:
+    rke2_token: synthetic-test-token
+    rke2_server_first: localhost
+    rke2_node_ip: 192.0.2.10
+    rke2_tls_san: []
+    rke2_server_taint: true
+  tasks:
+    - name: Render the server configuration with synthetic data
+      ansible.builtin.set_fact:
+        rendered_server_config: "{{ lookup('ansible.builtin.template', '../roles/rke2_server/templates/config.yaml.j2') }}"
+      no_log: true
+
+    - name: Check the reviewed defaults and rendered configuration
+      ansible.builtin.assert:
+        that:
+          - rke2_cni == 'canal'
+          - rke2_ingress_nginx_enabled | bool
+          - "'cni: \"canal\"' in rendered_server_config"
+          - "'rke2-ingress-nginx' not in rendered_server_config"
+          - rke2_data_device == ''
+          - rke2_data_min_size_gb | int == 40
+        quiet: true
