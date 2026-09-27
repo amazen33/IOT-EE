@@ -1,33 +1,44 @@
-# Layer 0: private Hyper-V infrastructure
+# Standalone Layer 0: Hyper-V lab machines
 
-Raw virtual machines for the IOT-EE Kubernetes cluster, on **one Windows
-Hyper-V host**, behind a **private (Internal) switch with Windows NAT**.
+This directory is a self-contained module. It prepares one Windows Hyper-V
+host and creates Ubuntu Server VMs with OpenTofu, then hands the node list
+to whatever configures them. It does not install Kubernetes, read from or
+write into any other directory, or need any IOT-EE service; you can copy the
+whole directory into another project and run it there. The node names,
+addresses and disk sizes in `terraform.tfvars.example` are an example lab.
+This is a **single-host lab**, not a highly available or production design.
 
-| VM | Role | IPv4 | MAC | vCPU | RAM | Data disk |
-| --- | --- | --- | --- | --- | --- | --- |
-| `rke2-master-01` | control-plane | 10.20.0.10 | 00155D140A10 | 2 | 4 GB | 40 GB |
-| `rke2-worker-01` | worker | 10.20.0.21 | 00155D140A21 | 2 | 4 GB | 60 GB |
-| `rke2-worker-02` | worker | 10.20.0.22 | 00155D140A22 | 2 | 4 GB | 60 GB |
+| | |
+| --- | --- |
+| **Needs** | A Windows Hyper-V host, an elevated PowerShell 5.1+ session in *Hyper-V Administrators*, OpenTofu 1.6+, network access to the Ubuntu cloud-image site and the provider registries on first use, an SSH public key, and this directory's `terraform.tfvars` |
+| **Creates** | On the host (prep script): an Internal switch, gateway address, Windows NAT, VM and template folders, a read-only golden template, optionally QEMU for Windows. Per node (OpenTofu): a cloud-init ISO, a differencing OS disk, a dynamic data disk, a Generation 2 VM |
+| **Produces** | `out/ansible-inventory.ini`, `out/nodes.json`, `out/network.json` and `out/check-*.json` reports (git-ignored); the same data as `tofu output` |
+| **One source of settings** | `terraform.tfvars`. `scripts/deploy-layer0.ps1` and `scripts/check-layer0.ps1` read it through `tofu console`, so host preparation gets exactly the paths, switch, subnet, gateway and sizes the plan uses |
+| **One test command** | `.\tests\verify.ps1` (offline; add `-RunTofu` for `tofu fmt`/`init`/`validate`). No Hyper-V needed |
+| **Owns** | Inputs (`terraform.tfvars.example`), host preparation and helpers (`scripts/`), OpenTofu configuration and provider lock, tests (`tests/`), outputs. Copy the whole directory, including `.terraform.lock.hcl` and `.gitignore` |
+| **Keeps out of Git** | `terraform.tfvars`, state, saved plans, `out/`, `hosts.ini`, VM disks and images, downloaded tools |
 
-These are the defaults; every value is a variable (`variables.tf`).
+## What it creates
 
-## Scope: what Layer 0 does and does not do
+`scripts/prep-hyperv-host.ps1` first checks disk capacity, then enables
+Hyper-V if necessary, creates the Internal switch, gateway, Windows NAT,
+folders and an immutable Ubuntu cloud-image VHDX template (verified against
+Canonical's `SHA256SUMS`). It can install QEMU for Windows to convert the
+image. It never creates a WinRM listener.
 
-**Does:** the Internal switch, NAT, gateway address and golden template on the
-host (`scripts/prep-hyperv-host.ps1`); per VM, a differencing OS disk, an
-empty data disk, a Gen-2 VM with a static MAC, and a cloud-init seed that sets
-only the **hostname, static IP, and one login with one SSH public key**.
-Outputs the node list as JSON and as an Ansible inventory for Layer 1.
+The OpenTofu configuration creates, for each node, a cloud-init ISO, a
+differencing OS VHDX, a dynamic data VHDX and a Generation 2 VM. Each VM is
+created **powered off**; a `null_resource` then disables checkpoints and
+Automatic Checkpoints, sets integration services and start/stop actions,
+and starts it. The seed sets only the hostname, a static IP and one
+public-key-only `admin_user` login.
 
-**Does not:** install packages, run commands in the guests, format the data
-disk, or touch Kubernetes. That is Layer 1 (`deploy/01-k8s-engine/rke2-ansible`, Ansible)
-and Layer 2 (`deploy/k8s`).
+OpenTofu uses `registry.terraform.io/windsorcli/hyperv` 0.4.0 (MPL-2.0) with
+its local backend and `hashicorp/null` 3.3.2, both pinned exactly; the lock
+file has hashes for `windows_amd64` and `linux_amd64`. Run it **on the
+Hyper-V host**; it needs no WinRM account, listener or credentials.
 
-The seed is required, not optional: Hyper-V cannot set a Linux guest's IP from
-the host, and Windows NAT has no DHCP server, so the guest must apply its own
-static address on first boot.
-
-## Network
+## Network (example values)
 
 ```
  LAN ── host NIC ── Windows host ── WinNAT (10.20.0.0/24)
@@ -40,147 +51,171 @@ static address on first boot.
     10.20.0.10        10.20.0.21       10.20.0.22
 ```
 
-| Address(es) | Used for |
-| --- | --- |
-| 10.20.0.1 | Host (gateway, NAT) |
-| 10.20.0.10-.22 | Nodes |
-| 10.20.0.40-.49 | LoadBalancer services (Layer 2, kube-vip) |
+The VMs reach the internet through NAT; DNS comes from `network.dns_servers`.
+They are reachable **from the host only** unless you publish a port
+(`-ApiServerForwardTo <control-plane IP>` forwards host TCP 6443). Windows
+allows **one NAT per host**; the prep script refuses to replace another.
 
-- The VMs reach the internet through NAT. DNS comes from `network.dns_servers`
-  (NAT provides none).
-- The VMs are reachable **from the host only**. Publish a port to the LAN with
-  a NAT static mapping. The prep script can do it for the API:
-  `-ApiServerForwardTo 10.20.0.10`. Add the host's LAN address to Layer 1's
-  `rke2_tls_san` so the API certificate is valid for it.
-- Windows allows **one NAT per host**. The prep script refuses to run if a
-  different NAT exists (for example Docker Desktop's) rather than replace it.
+## Disk space
 
-## Prerequisites (on the Hyper-V host)
+OS disks are differencing disks and data disks are dynamic: both start small
+and **grow** as the guests write, each OS disk up to the template size (30 GB)
+and each data disk up to its `data_disk_gb`. The example nodes can reach
+3 x 30 + 40 + 60 + 60 = 250 GB. When the volume fills, Hyper-V pauses the VMs
+("Disk Full") and then turns them off. That stopped both workers of the
+first lab mid-install on 2026-09-27, which is why capacity is checked first.
 
-- Windows 10/11 Pro/Enterprise/Education or Windows Server with Hyper-V, and
-  about 16 GB free RAM and 200 GB free disk for the defaults.
-- QEMU for Windows (`qemu-img.exe`), to convert the Ubuntu cloud image. The
-  prep script installs it for you (see step 1) if it isn't already on `PATH`.
-- OpenTofu >= 1.6 (or Terraform >= 1.6).
-- An SSH key pair: `ssh-keygen -t ed25519` creates `~/.ssh/id_ed25519.pub`.
-- A local Windows account in *Hyper-V Administrators* for Terraform, e.g.:
-  ```powershell
-  $pw = Read-Host -AsSecureString "Password for iotee-tf"
-  New-LocalUser -Name iotee-tf -Password $pw -PasswordNeverExpires
-  Add-LocalGroupMember -Group "Hyper-V Administrators" -Member iotee-tf
-  Add-LocalGroupMember -Group "Remote Management Users" -Member iotee-tf
-  ```
-  After step 1 below has created `D:\HyperV\iotee`, give that account write
-  access to it (Terraform creates the disks and seed ISOs there):
-  ```powershell
-  icacls D:\HyperV\iotee /grant "iotee-tf:(OI)(CI)M"
-  ```
+- `prep-hyperv-host.ps1` on its own requires `-VmFreeGB` (default 280) and
+  `-TemplateFreeGB` (default 40); on one volume the two are added.
+- `deploy-layer0.ps1` passes what the lab still needs instead: the worst case
+  minus what the existing Layer 0 disks already occupy, at least `-MinFreeGB`
+  (40), and 1 GB for the template once it is built. `-AllowOvercommit`
+  requires only `-MinFreeGB` and prints the shortfall.
+- `check-layer0.ps1` fails below `-MinFreeGB` and warns below the worst case.
 
-## Run it
+## Install
 
-All commands run in an **elevated PowerShell** on the Hyper-V host, from the
-repository root.
-
-### 1. Prepare the host (once)
+Elevated PowerShell on the Hyper-V host, in this directory:
 
 ```powershell
-cd deploy\00-infra\private-hyperv
-.\scripts\prep-hyperv-host.ps1 -WhatIf     # preview every change
-.\scripts\prep-hyperv-host.ps1             # asks before each change
+Copy-Item .\terraform.tfvars.example .\terraform.tfvars
+# Edit terraform.tfvars: replace X: with a real local volume, set ssh_public_key_path and nodes.
+Set-ExecutionPolicy -Scope Process Bypass -Force
+.\scripts\deploy-layer0.ps1 -PlanOnly   # preflight, capacity, host prep, plan; applies nothing
+.\scripts\deploy-layer0.ps1             # the same, then asks you to type "apply"
 ```
 
-Idempotent: re-running changes nothing that is already in place. The golden
-template (`D:\HyperV\iotee\templates\ubuntu-noble-base.vhdx`) is marked
-read-only and never rebuilt in place. To roll a new one, pass
-`-TemplateName ubuntu-noble-base-v2.vhdx` and point `template_vhdx_path` at it.
+`deploy-layer0.ps1` runs: preflight (Hyper-V module, OpenTofu version,
+`terraform.tfvars`); `tofu init -lockfile=readonly`; the settings from
+`terraform.tfvars` through `tofu console` (variable validations apply, and
+their failures stop the run even though `tofu console` exits 0); the
+capacity check and `prep-hyperv-host.ps1`, which asks before each change; a
+gate that stops if the switch or the read-only template is missing (for
+example after enabling Hyper-V, which needs a reboot); a saved plan with a
+create/update/delete summary; **apply only after you type `apply`**; the
+read-only `check-layer0.ps1`, waiting up to `-WaitMinutes` (5) for the
+guests; and the hand-over files in `out/`. It refuses a plan that deletes or
+replaces anything unless you pass `-AllowDestroy`. `-SkipHostPrep` skips the
+prep script but not the capacity check. Re-running is safe: an unchanged lab
+plans "No changes" and goes straight to the check.
 
-If `qemu-img.exe` isn't already on `PATH`, the script downloads QEMU for
-Windows (qemu.weilnetz.de, linked from qemu.org/download) and installs it
-silently to `scripts\tools\qemu\` (next to the script, not Program Files;
-git-ignored). That build publishes no checksum, so this step is HTTPS-only,
-not hash-verified — the script prints the download's SHA-256 and Authenticode
-signature status so you can check it yourself. Already have `qemu-img.exe`
-from a source you trust? Pass `-QemuImgPath <path>` to use that instead and
-skip the download entirely. `-SkipQemuInstall` fails with instructions
-instead of downloading anything.
+For three nodes, a first plan has **15** resources: three ISOs, six disks,
+three VMs and three settings steps. Never apply a plan that unexpectedly
+destroys VMs or disks.
 
-### 2. Configure
+<details>
+<summary>The same steps by hand</summary>
 
 ```powershell
-Copy-Item terraform.tfvars.example terraform.tfvars   # git-ignored; edit if your paths differ
-$env:TF_VAR_hyperv_user     = "$env:COMPUTERNAME\iotee-tf"
-$secure = Read-Host -AsSecureString "Password for iotee-tf"
-$env:TF_VAR_hyperv_password = [System.Net.NetworkCredential]::new('', $secure).Password
+.\scripts\prep-hyperv-host.ps1 -VmRoot 'E:\HyperV\lab\vms' -TemplateRoot 'E:\HyperV\lab\templates' -WhatIf
+.\scripts\prep-hyperv-host.ps1 -VmRoot 'E:\HyperV\lab\vms' -TemplateRoot 'E:\HyperV\lab\templates'
+tofu init -input=false -lockfile=readonly
+tofu plan -out layer0.tfplan
+tofu show layer0.tfplan
+tofu apply layer0.tfplan
+.\scripts\check-layer0.ps1 -WaitMinutes 5
+New-Item -ItemType Directory -Force out | Out-Null
+tofu output -raw ansible_inventory_ini | Set-Content -Encoding ascii out\ansible-inventory.ini
 ```
 
-This works in both Windows PowerShell 5.1 and PowerShell 7, and the password
-stays in this session's environment only.
+Use the same paths, switch, subnet and gateway as `terraform.tfvars`. Write
+the inventory with `Set-Content -Encoding ascii`, not `>`: in Windows
+PowerShell 5.1 `>` writes UTF-16, which Ansible cannot read.
+</details>
 
-### 3. Plan and apply
+## Check and hand over
 
 ```powershell
-tofu init
-tofu plan -out l0.tfplan      # expect 12 to add: per VM a seed ISO, 2 disks, 1 VM
-tofu apply l0.tfplan
+.\scripts\check-layer0.ps1                  # read-only; exit code 1 on any failure
+.\scripts\check-layer0.ps1 -CheckCloudInit  # plus `cloud-init status` over SSH
 ```
 
-After the first `tofu init`, commit the provider lock file:
-`tofu providers lock -platform=windows_amd64 -platform=linux_amd64`.
+Per node it checks: the VM exists and is Running; checkpoints are off (type,
+Automatic Checkpoints, no snapshots, no `.avhdx`); every disk is under
+`vm_root`; the Heartbeat integration service is OK; TCP 22 answers. With
+`-CheckCloudInit` it runs `cloud-init status` over SSH with your key and
+**already trusted** host keys only (it never accepts a host key). It also
+checks free space, and writes `out/check-<UTC time>.json`.
 
-### 4. Hand over to Layer 1
+"Port 22 refused while the heartbeat is OK" means the guest is up but SSH
+never started. On the first lab that was a VM whose OS disk was left over
+from an earlier, interrupted boot; rebuilding it (below) fixed it.
 
-```powershell
-tofu output nodes_json
-tofu output -raw ansible_inventory_ini | Set-Content -Encoding utf8 ..\..\01-k8s-engine\rke2-ansible\inventory\hosts.ini
-```
+**Hand-over contract:** `out/ansible-inventory.ini` has groups
+`rke2_server` (control-plane nodes), `rke2_agent` (workers) and
+`rke2_cluster` (both), `ansible_host` per node, and `ansible_user` /
+`ansible_python_interpreter` for the group. `out/nodes.json` and
+`out/network.json` carry the same nodes and the network. A consumer copies
+these files into its own configuration; this directory never writes
+anywhere else. The other outputs are `nodes`, `control_plane_ips`,
+`worker_ips`, `network`, `ansible_inventory` (YAML) and
+`ansible_inventory_json`.
 
-With the default `nodes` and `network` the generated file equals the committed
-`inventory/hosts.ini`, so `git diff` shows nothing. Then continue with Layer 1
-in `deploy/01-k8s-engine/rke2-ansible/README.md`.
-
-## Outputs
-
-| Output | Content |
-| --- | --- |
-| `nodes` | per VM: role, IPv4, MAC, vCPU, RAM, data disk, Hyper-V name |
-| `nodes_json` | role, IPv4 and MAC per VM, as a JSON string |
-| `control_plane_ips`, `worker_ips` | lists of IPv4 addresses |
-| `ansible_inventory_ini` | INI inventory for Layer 1: groups `rke2_server` / `rke2_agent` / `rke2_cluster`, `ansible_host`, `ansible_user` |
-| `ansible_inventory` | the same inventory as YAML |
-| `ansible_inventory_json` | the same inventory as JSON |
-| `network` | CIDR, gateway, DNS, switch name |
-
-## Changing the cluster
+## Changing the lab
 
 - **Add a worker:** add an entry to `nodes` (unique name, `ip_host`, `mac`),
-  `tofu apply`, re-export the inventory, then run Layer 1's `site-rke2.yml` for
-  that node (with the first server in `--limit`, which supplies the join token).
-- **Remove a node:** drain it in Layer 1 first, remove its entry, `tofu apply`.
-- **Rebuild a node:**
-  `tofu apply -replace='hyperv_vhd.os["rke2-worker-01"]' -replace='hyperv_vhd.data["rke2-worker-01"]' -replace='hyperv_machine_instance.vm["rke2-worker-01"]'`
-- **Control-plane HA:** set 3 `control-plane` entries (Terraform accepts 1, 3
-  or 5). One control-plane node means the API is down whenever that VM is.
+  run `deploy-layer0.ps1`, then hand the new inventory to the consumer.
+- **Remove a node:** drain it in the consumer first, remove its entry, run
+  `deploy-layer0.ps1 -AllowDestroy` and review the plan.
+- **Rebuild a node** (fresh OS and data disks; the VM is replaced too, so
+  disks are never deleted while attached). `--%` keeps the quotes intact in
+  PowerShell:
+  ```powershell
+  tofu plan -out rebuild.tfplan --% -replace=hyperv_vm.vm[\"rke2-worker-01\"] -replace=hyperv_vhd.os[\"rke2-worker-01\"] -replace=hyperv_vhd.data[\"rke2-worker-01\"]
+  ```
+  Expect 4 to add and 4 to destroy, all for that node. Apply only that
+  plan, then remove the node's old host key (`ssh-keygen -R <address>`).
+- **Move to another volume:** `tofu plan -destroy -out destroy.tfplan`,
+  review, apply; copy the read-only template to the new template folder;
+  update `terraform.tfvars`; run `deploy-layer0.ps1`. Everything on the VMs
+  is lost.
+- **Remove the lab:** the same destroy plan. The template, switch and NAT
+  stay (host preparation, reusable).
 
 ## Design notes
 
 - **No checkpoints.** Restoring a checkpoint of an etcd member rewinds its
-  log and can corrupt the cluster; rebuild the VM instead.
+  log and can corrupt the cluster. The settings step runs when a VM is
+  created or replaced; OpenTofu does not see later out-of-band changes, so
+  `check-layer0.ps1` checks them.
 - **Differencing OS disks** over a read-only template: fast to create, cheap
-  to rebuild. The OS disk's size is the template's (`-TemplateSizeGB`, default
-  30). Workload data goes on the separate, per-node-sized data disk.
+  to rebuild. Build a new template with `-TemplateName` and point
+  `template_vhdx_path` at it instead of changing a parent in place.
 - **A map, not a count,** for `nodes`: removing one VM never renumbers or
   rebuilds the others.
-- **Secrets** (`TF_VAR_hyperv_*`) come from the environment. Only the SSH
-  *public* key is read; a private key path is rejected by validation.
+- **No secrets.** No connection credentials; only the SSH *public* key is
+  read, and a private key path is rejected by validation.
 
-## Verification status
+## Provider history
 
-Checked while writing (2026-09-25): `tofu fmt` and `tofu validate` against the
-real `taliesins/hyperv` 1.2.1 and `archive` provider binaries; an offline
-`tofu plan` of the example (12 resources); the rendered seed files, the JSON
-and YAML inventories parsed; every variable validation rejects bad input (node
-count, MAC format, duplicates, gateway outside the subnet, node on the gateway,
-undersized control plane, invalid hostname, private or missing SSH key); the
-prep script parses with PowerShell 7.
+Until 2026-09-26 this module used `taliesins/hyperv` 1.2.1 over WinRM/HTTPS
+with a local service account. On the lab host that connection could not be
+authorized even with the account in *Hyper-V Administrators* and *Remote
+Management Users*, so it moved to `windsorcli/hyperv` 0.4.0 with the local
+backend (published on `registry.terraform.io` only, hence the explicit
+hostname in `main.tf`). Resource names changed (`hyperv_machine_instance` ->
+`hyperv_vm`, `hyperv_iso_image` -> `hyperv_image_file` plus the
+`hyperv_iso_volume` data source). A WinRM listener, the firewall rule
+`IOT-EE WinRM HTTPS (Terraform)` or an `iotee-tf` account left by an older
+prep run are unused now; remove them if nothing else needs them.
 
-**Not yet run on a real Hyper-V host.** Record the first real run here.
+## Verification record
+
+- **Offline** (2026-09-27): `tests/verify.ps1 -RunTofu` passes: every script
+  parses; the capacity rules accept 3 and reject 4 cases; the directory has
+  no reference outside itself; the deploy/check helper unit tests (33
+  offline, 37 with the real `tofu console`); `tofu fmt`, locked `init` and
+  `validate` against the real provider archives, whose SHA-256 values match
+  the lock file. `deploy-layer0.ps1` and `check-layer0.ps1` were exercised on
+  Linux with the Hyper-V cmdlets stubbed (plan-only, declined confirmation,
+  capacity refusal and overcommit; missing VM, snapshot, `.avhdx`, closed SSH
+  port). **Neither script has run on a Hyper-V host yet.**
+- **Real lab run** (2026-09-27, owner's host, commands run by the owner and
+  their output reviewed): with site-specific tfvars on `E:`, `tofu apply`
+  added 15 resources; three VMs ran with checkpoints disabled and answered
+  SSH (cloud-init `status: done`, `errors: []` was checked on the previous
+  VMs built from the same template and seed); a separate Layer 1
+  then installed RKE2 with all three nodes Ready. The first attempt on `D:`
+  ran out of disk space.
+- Not verified: a host restart, adding or removing a node, any restore, and
+  anything beyond one host.

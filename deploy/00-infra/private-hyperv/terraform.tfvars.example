@@ -1,17 +1,16 @@
 # Copy to terraform.tfvars (git-ignored) and adjust to your host.
-# Credentials are NOT set here. Export them instead:
-#   $env:TF_VAR_hyperv_user     = "$env:COMPUTERNAME\iotee-tf"
-#   $secure = Read-Host -AsSecureString "Password for iotee-tf"
-#   $env:TF_VAR_hyperv_password = [System.Net.NetworkCredential]::new('', $secure).Password
+# No connection variables: OpenTofu runs directly on this Hyper-V host
+# (backend = "local" in main.tf), as whatever account runs `tofu` -- no
+# separate host/port/credential to set here or in the environment.
 
-# Terraform running on the Hyper-V host itself.
-hyperv_host = {
-  address = "127.0.0.1"
-}
-
-# Must match the prep script's -VmRoot and -TemplateRoot/-TemplateName.
-vm_root            = "D:\\HyperV\\iotee\\vms"
-template_vhdx_path = "D:\\HyperV\\iotee\\templates\\ubuntu-noble-base.vhdx"
+# Replace X: with a local volume sized for this deployment. These values must
+# match the prep script's -VmRoot and -TemplateRoot/-TemplateName exactly
+# (scripts/deploy-layer0.ps1 passes them for you). Size for GROWTH: each OS
+# disk can grow to the template size (30 GB) and each data disk to
+# data_disk_gb, so the nodes below can reach 3 x 30 + 40 + 60 + 60 = 250 GB.
+# Hyper-V pauses, then turns off, a VM whose disk cannot grow.
+vm_root            = "X:\\HyperV\\lab\\vms"
+template_vhdx_path = "X:\\HyperV\\lab\\templates\\ubuntu-noble-base.vhdx"
 
 # Must match the prep script's -SwitchName, -NatPrefix and -GatewayAddress.
 switch_name = "iotee-nat"
