@@ -1,0 +1,222 @@
+---
+# A new blank disk is formatted only after a typed confirmation. Never mount
+# over an existing RKE2 directory; an installed cluster needs a separate,
+# reviewed migration or a disposable-lab rebuild.
+- name: Data disk path is explicit and local
+  ansible.builtin.assert:
+    that:
+      - rke2_data_device is match('^/dev/[A-Za-z0-9_./-]+$')
+      - rke2_data_device != '/dev/'
+    fail_msg: "Set rke2_data_device to the verified dedicated disk for this host."
+
+- name: Inspect selected data device
+  ansible.builtin.stat:
+    path: "{{ rke2_data_device }}"
+    follow: true
+  register: rke2_data_stat
+
+- name: Selected device exists and is a block device
+  ansible.builtin.assert:
+    that:
+      - rke2_data_stat.stat.exists
+      - rke2_data_stat.stat.isblk
+    fail_msg: "{{ rke2_data_device }} is not an existing block device."
+
+- name: Read selected device type
+  ansible.builtin.command: "lsblk -dn -o TYPE -- {{ rke2_data_device }}"
+  register: rke2_data_type
+  changed_when: false
+
+- name: Read selected device topology
+  ansible.builtin.command: "lsblk -nr -o NAME -- {{ rke2_data_device }}"
+  register: rke2_data_topology
+  changed_when: false
+
+- name: Read selected device capacity
+  ansible.builtin.command: "blockdev --getsize64 {{ rke2_data_device }}"
+  register: rke2_data_bytes
+  changed_when: false
+
+- name: Resolve selected device to its actual block path
+  ansible.builtin.command: "readlink -f {{ rke2_data_device }}"
+  register: rke2_data_resolved
+  changed_when: false
+
+- name: Check selected device is not mounted elsewhere
+  ansible.builtin.command: "lsblk -dn -o MOUNTPOINT -- {{ rke2_data_device }}"
+  register: rke2_data_mountpoints
+  changed_when: false
+
+- name: Read root filesystem device
+  ansible.builtin.command: findmnt -n -o SOURCE /
+  register: rke2_root_source
+  changed_when: false
+
+- name: Read root parent device
+  ansible.builtin.command: "lsblk -dn -o PKNAME -- {{ rke2_root_source.stdout }}"
+  register: rke2_root_parent
+  changed_when: false
+
+- name: Refuse partitions, the root disk, or an undersized disk
+  ansible.builtin.assert:
+    that:
+      - rke2_data_type.stdout == 'disk'
+      - rke2_data_topology.stdout_lines | length == 1
+      - rke2_data_resolved.stdout | basename != rke2_root_parent.stdout
+      - (rke2_data_bytes.stdout | int) >= (rke2_data_min_size_gb | int) * 1073741824
+      - rke2_data_mountpoints.stdout | trim in ['', '/var/lib/rancher']
+    fail_msg: >-
+      {{ rke2_data_device }} must be a dedicated, unpartitioned disk of at least
+      {{ rke2_data_min_size_gb }} GiB, separate from the root filesystem.
+
+- name: Check whether the RKE2 data directory is already mounted
+  ansible.builtin.command: findmnt -n -o UUID --mountpoint /var/lib/rancher
+  register: rke2_existing_mount
+  changed_when: false
+  failed_when: false
+
+- name: Check for existing RKE2 data on the OS disk
+  ansible.builtin.stat:
+    path: /var/lib/rancher/rke2
+  register: rke2_existing_data
+  when: rke2_existing_mount.rc != 0
+
+- name: Check whether the RKE2 mountpoint already exists
+  ansible.builtin.stat:
+    path: /var/lib/rancher
+  register: rke2_existing_directory
+  when: rke2_existing_mount.rc != 0
+
+- name: Inspect other files that a mount would hide
+  ansible.builtin.find:
+    paths: /var/lib/rancher
+    file_type: any
+    hidden: true
+    recurse: false
+  register: rke2_existing_files
+  when:
+    - rke2_existing_mount.rc != 0
+    - rke2_existing_directory.stat.exists
+
+- name: Refuse to hide existing RKE2 data under a new mount
+  ansible.builtin.assert:
+    that: not rke2_existing_data.stat.exists
+    fail_msg: >-
+      RKE2 data already exists on the OS disk. Do not mount over it. Migrate
+      deliberately or rebuild this disposable lab node from a reviewed plan.
+  when: rke2_existing_mount.rc != 0
+
+- name: Refuse to hide any other existing files under a new mount
+  ansible.builtin.assert:
+    that: rke2_existing_files.matched | int == 0
+    fail_msg: "/var/lib/rancher contains files; review them before mounting over this directory."
+  when:
+    - rke2_existing_mount.rc != 0
+    - rke2_existing_directory.stat.exists
+
+- name: Inspect filesystem type on the dedicated disk
+  ansible.builtin.command: "blkid -s TYPE -o value {{ rke2_data_device }}"
+  register: rke2_data_fstype
+  changed_when: false
+  failed_when: false
+
+- name: Refuse a filesystem other than ext4
+  ansible.builtin.assert:
+    that: rke2_data_fstype.rc != 0 or rke2_data_fstype.stdout == 'ext4'
+    fail_msg: "{{ rke2_data_device }} has an unexpected filesystem; review it manually."
+
+- name: Check for signatures before formatting a blank disk
+  ansible.builtin.command: "wipefs -n {{ rke2_data_device }}"
+  register: rke2_data_signatures
+  changed_when: false
+  when: rke2_data_fstype.rc != 0
+
+- name: Refuse an unrecognized signature on a blank-looking disk
+  ansible.builtin.assert:
+    that: rke2_data_signatures.stdout | trim == ''
+    fail_msg: "{{ rke2_data_device }} has a disk signature; investigate before formatting."
+  when: rke2_data_fstype.rc != 0
+
+- name: Ask before formatting a blank disk
+  ansible.builtin.pause:
+    prompt: >-
+      BLANK DISK {{ rke2_data_device }} on {{ inventory_hostname }} will be
+      formatted as ext4. Type FORMAT {{ inventory_hostname }} {{ rke2_data_device }}
+    echo: true
+  register: rke2_format_confirmation
+  when: rke2_data_fstype.rc != 0
+
+- name: Require exact one-time format confirmation
+  ansible.builtin.assert:
+    that: rke2_format_confirmation.user_input == 'FORMAT ' ~ inventory_hostname ~ ' ' ~ rke2_data_device
+    fail_msg: "Formatting cancelled; no data disk was changed."
+  when: rke2_data_fstype.rc != 0
+
+- name: Format the confirmed blank disk
+  ansible.builtin.command: "mkfs.ext4 -F -L rke2-data {{ rke2_data_device }}"
+  when: rke2_data_fstype.rc != 0
+  changed_when: true
+
+- name: Read the dedicated filesystem UUID
+  ansible.builtin.command: "blkid -s UUID -o value {{ rke2_data_device }}"
+  register: rke2_data_uuid
+  changed_when: false
+
+- name: Dedicated filesystem has a UUID
+  ansible.builtin.assert:
+    that: rke2_data_uuid.stdout | length > 0
+
+- name: Verify an existing mount uses the selected disk
+  ansible.builtin.assert:
+    that: rke2_existing_mount.stdout == rke2_data_uuid.stdout
+    fail_msg: "/var/lib/rancher is mounted from a different disk."
+  when: rke2_existing_mount.rc == 0
+
+- name: Create the RKE2 data mountpoint
+  ansible.builtin.file:
+    path: /var/lib/rancher
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+  when: rke2_existing_mount.rc != 0
+
+- name: Keep the dedicated disk mounted after reboot
+  ansible.builtin.lineinfile:
+    path: /etc/fstab
+    regexp: '^[^#].*\s/var/lib/rancher\s+'
+    line: "UUID={{ rke2_data_uuid.stdout }} /var/lib/rancher ext4 defaults,noatime 0 2"
+    state: present
+
+- name: Mount RKE2 data before installation
+  ansible.builtin.command: mount /var/lib/rancher
+  when: rke2_existing_mount.rc != 0
+  changed_when: true
+
+- name: Make the RKE2 service depend on its data mount
+  ansible.builtin.file:
+    path: "/etc/systemd/system/{{ 'rke2-server' if inventory_hostname in groups['rke2_server'] else 'rke2-agent' }}.service.d"
+    state: directory
+    owner: root
+    group: root
+    mode: '0755'
+
+- name: Require the data mount before RKE2 starts
+  ansible.builtin.copy:
+    dest: "/etc/systemd/system/{{ 'rke2-server' if inventory_hostname in groups['rke2_server'] else 'rke2-agent' }}.service.d/data-mount.conf"
+    content: "[Unit]\nRequiresMountsFor=/var/lib/rancher\n"
+    owner: root
+    group: root
+    mode: '0644'
+  register: rke2_mount_dependency
+
+- name: Reload systemd after changing the mount dependency
+  ansible.builtin.systemd_service:
+    daemon_reload: true
+  when: rke2_mount_dependency is changed
+
+- name: Verify the RKE2 data mount is active
+  ansible.builtin.command: findmnt -n -o UUID --mountpoint /var/lib/rancher
+  register: rke2_final_mount
+  changed_when: false
+  failed_when: rke2_final_mount.stdout != rke2_data_uuid.stdout

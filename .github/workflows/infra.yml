@@ -36,17 +36,8 @@ jobs:
         with:
           python-version: '3.12'
       - run: python -m pip install ansible-core
-      - name: Syntax-check every playbook against the committed inventory
-        env:
-          RKE2_TOKEN: syntax-check-only-not-a-real-token-0000000000
-        run: |
-          for pb in site-rke2.yml health.yml heal.yml; do
-            ansible-playbook --syntax-check -i inventory/hosts.ini "$pb"
-          done
-      - name: Only ansible.builtin modules (no unpinned collections)
-        run: |
-          bad=$(grep -rhoE '^\s+-? ?[a-z_]+\.[a-z_]+\.[a-z_]+:' site-rke2.yml health.yml heal.yml roles | grep -v 'ansible\.builtin\.' || true)
-          if [ -n "$bad" ]; then echo "Non-builtin modules: $bad"; exit 1; fi
+      - name: Layer 1 standalone syntax and inventory checks
+        run: bash tests/verify-layer1.sh
 
   kubernetes:
     runs-on: ubuntu-latest

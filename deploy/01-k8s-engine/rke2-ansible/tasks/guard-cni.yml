@@ -1,0 +1,52 @@
+---
+- name: Primary CNI is a supported bundled option
+  ansible.builtin.assert:
+    that: rke2_cni in ['canal', 'cilium', 'calico', 'flannel']
+    fail_msg: "Choose one bundled primary CNI before first boot."
+
+- name: Check whether this server is already running RKE2
+  ansible.builtin.command: systemctl is-active rke2-server
+  register: rke2_existing_service
+  changed_when: false
+  failed_when: false
+
+- name: Check whether this server has existing etcd data
+  ansible.builtin.stat:
+    path: /var/lib/rancher/rke2/server/db
+  register: rke2_existing_etcd
+
+- name: Refuse a stopped existing server until its CNI is reviewed
+  ansible.builtin.assert:
+    that: not rke2_existing_etcd.stat.exists
+    fail_msg: >-
+      Existing RKE2 data is present while rke2-server is stopped. Check
+      the installed CNI and recover or rebuild this node deliberately.
+  when: rke2_existing_service.rc != 0
+
+- name: Read installed CNI charts on a running server
+  ansible.builtin.command: >-
+    /var/lib/rancher/rke2/bin/kubectl --kubeconfig /etc/rancher/rke2/rke2.yaml
+    -n kube-system get helmcharts -o custom-columns=NAME:.metadata.name --no-headers
+  register: rke2_existing_charts
+  changed_when: false
+  when: rke2_existing_service.rc == 0
+
+- name: Refuse a primary CNI switch on a running cluster
+  ansible.builtin.assert:
+    that:
+      - (rke2_existing_charts.stdout_lines | intersect(['rke2-canal', 'rke2-cilium', 'rke2-calico', 'rke2-flannel']) | sort) == ['rke2-' ~ rke2_cni]
+    fail_msg: >-
+      This cluster already has a different primary CNI. RKE2 does not
+      support switching it in place. Rebuild the disposable lab cluster
+      from a reviewed Layer 0 plan before applying this configuration.
+  when: rke2_existing_service.rc == 0
+
+- name: Refuse an unreviewed bundled ingress change on a running cluster
+  ansible.builtin.assert:
+    that:
+      - ('rke2-ingress-nginx' in rke2_existing_charts.stdout_lines) == (rke2_ingress_nginx_enabled | bool)
+    fail_msg: >-
+      The running cluster's ingress-nginx chart differs from the reviewed
+      configuration. Do not remove or add it through a routine rerun; plan
+      the ingress migration or rebuild separately.
+  when: rke2_existing_service.rc == 0

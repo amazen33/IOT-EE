@@ -1,0 +1,60 @@
+---
+# Inventory checks, run on localhost against the loaded inventory before any
+# host is contacted. Imported by validate-inventory.yml (static, CI) and by
+# site-rke2.yml's preflight (live). Set inventory_validation_live: true at
+# play level for a live run; it additionally rejects documentation-only
+# addresses so the example inventory can never be used against real hosts.
+
+- name: Collect inventory facts
+  ansible.builtin.set_fact:
+    inv_servers: "{{ groups['rke2_server'] | default([]) }}"
+    inv_agents: "{{ groups['rke2_agent'] | default([]) }}"
+    inv_cluster: "{{ groups['rke2_cluster'] | default([]) }}"
+
+- name: Groups have a valid shape
+  ansible.builtin.assert:
+    that:
+      - inv_servers | length in [1, 3, 5]
+      - inv_agents | length >= 1
+      - inv_servers | intersect(inv_agents) | length == 0
+      - inv_cluster | sort == (inv_servers + inv_agents) | sort
+    fail_msg: >-
+      Inventory must have 1, 3 or 5 hosts in [rke2_server] (etcd quorum), at
+      least 1 in [rke2_agent], no host in both, and [rke2_cluster:children]
+      containing exactly those two groups. Got servers={{ inv_servers }},
+      agents={{ inv_agents }}, cluster={{ inv_cluster }}.
+
+- name: Every host has a DNS-label name, a valid IPv4 ansible_host and a non-root user
+  ansible.builtin.assert:
+    that:
+      - item is match('^[a-z0-9]([-a-z0-9]{0,61}[a-z0-9])?$')
+      - hostvars[item].ansible_host is defined
+      - (hostvars[item].ansible_host | string) is match('^[0-9]{1,3}(\.[0-9]{1,3}){3}$')
+      - (hostvars[item].ansible_host | string).split('.') | map('int') | select('gt', 255) | list | length == 0
+      - hostvars[item].ansible_user is defined
+      - hostvars[item].ansible_user != 'root'
+    fail_msg: >-
+      {{ item }}: needs a lowercase DNS-label name, ansible_host as a dotted
+      IPv4 address, and a non-root ansible_user (become is used for root).
+    quiet: true
+  loop: "{{ inv_cluster }}"
+
+- name: Node addresses are unique
+  ansible.builtin.assert:
+    that:
+      - addrs | length == addrs | unique | length
+    fail_msg: "Two hosts share an ansible_host: {{ addrs }}"
+  vars:
+    addrs: "{{ inv_cluster | map('extract', hostvars, 'ansible_host') | map('string') | list }}"
+
+- name: A live run never targets documentation-only addresses (RFC 5737)
+  ansible.builtin.assert:
+    that:
+      - hostvars[item].ansible_host is not match('^(192\.0\.2|198\.51\.100|203\.0\.113)\.')
+    fail_msg: >-
+      {{ item }} has {{ hostvars[item].ansible_host }}, a documentation
+      address from the example inventory. Generate inventory/hosts.ini from
+      Layer 0's output before a live run.
+    quiet: true
+  loop: "{{ inv_cluster }}"
+  when: inventory_validation_live | default(false) | bool

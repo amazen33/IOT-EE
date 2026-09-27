@@ -1,2 +1,8 @@
 # Local outputs of the playbooks; never committed.
 reports/
+# Real inventory and site-specific overrides: private addresses and local
+# names stay out of Git. Only hosts.example.ini and group_vars/all/main.yml
+# are committed.
+inventory/hosts.ini
+inventory/host_vars/
+inventory/group_vars/all/local.yml

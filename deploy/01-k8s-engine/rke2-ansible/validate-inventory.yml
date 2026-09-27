@@ -1,0 +1,18 @@
+---
+# Static inventory validation: contacts no host. Run before every live run
+# (site-rke2.yml repeats these checks in its preflight) and in CI against
+# the example inventory and the negative fixtures in tests/inventories/.
+#
+#   ansible-playbook -i inventory/hosts.ini validate-inventory.yml
+#   ansible-playbook -i inventory/hosts.example.ini validate-inventory.yml
+
+- name: Validate the inventory
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  become: false
+  vars:
+    inventory_validation_live: false
+  tasks:
+    - name: Structural checks
+      ansible.builtin.import_tasks: tasks/validate-inventory.yml

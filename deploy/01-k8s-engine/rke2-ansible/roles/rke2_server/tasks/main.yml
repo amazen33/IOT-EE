@@ -1,4 +1,19 @@
 ---
+# ----- Guard: security settings cannot be widened from the command line -----
+# Extra vars (-e) outrank every other variable source. The Pod Security
+# exemption list is compared against the reviewed list here, so an -e
+# override (or an unreviewed group_vars edit) fails the run instead of
+# silently exempting another namespace from the restricted standard.
+- name: Pod Security exemptions are exactly the reviewed list
+  ansible.builtin.assert:
+    that:
+      - rke2_pss_exempt_namespaces | sort == ['cis-operator-system', 'kube-system', 'tigera-operator']
+    fail_msg: >-
+      rke2_pss_exempt_namespaces is {{ rke2_pss_exempt_namespaces }}; only
+      kube-system, cis-operator-system and tigera-operator may be exempt.
+      Changing this needs a reviewed change to this role, not an override.
+  run_once: true
+
 # ----- CIS prerequisite: etcd user -------------------------------------------
 # With profile "cis", RKE2 runs etcd as this unprivileged user and refuses to
 # start the server if it does not exist.

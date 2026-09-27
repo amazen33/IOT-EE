@@ -1,0 +1,37 @@
+---
+# Committed defaults, loaded for every host in any inventory file in inventory/
+# (hosts.ini, hosts.example.ini). Site-specific, non-secret overrides (for
+# example rke2_tls_san) go in inventory/group_vars/all/local.yml or
+# inventory/host_vars/<host>.yml -- both git-ignored; start from
+# inventory/local-overrides.example.yml. Do not pass overrides with -e.
+
+# ----- RKE2 ----------------------------------------------------------------
+# Pinned, never "latest". v1.35.7+rke2r1 was RKE2's *stable* channel on
+# 2026-09-25 (rancher/rke2 release notes). Upgrade deliberately, one minor at
+# a time, servers before agents.
+rke2_version: "v1.35.7+rke2r1"
+
+# Select the primary CNI before first boot. RKE2 does not support changing it
+# on a running cluster. Istio Ambient, if later selected, is a separate layer.
+rke2_cni: canal
+rke2_ingress_nginx_enabled: true
+
+# RKE2's data directory must live on the dedicated Layer 0 disk before install.
+# Set the actual device in ignored inventory/group_vars/all/local.yml or
+# inventory/host_vars/<node>.yml after verifying it with lsblk. A blank disk
+# additionally requires interactive approval on every first format.
+rke2_data_device: ""
+rke2_data_min_size_gb: 40
+
+# Cluster secret. Read from the environment so it never lands in Git:
+#   export RKE2_TOKEN="$(openssl rand -hex 32)"   # once; keep it in your vault
+# It is the server's shared secret and the key to restoring etcd snapshots.
+# Agents do NOT use it directly: they join with the node token extracted from
+# the first server, which also pins the cluster CA.
+rke2_token: "{{ lookup('ansible.builtin.env', 'RKE2_TOKEN') }}"
+
+# Address each node registers with (Layer 0 gives every VM one static NIC).
+rke2_node_ip: "{{ ansible_host }}"
+
+# Name for the cluster in the exported kubeconfig.
+cluster_name: "iotee-pc"

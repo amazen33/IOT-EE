@@ -1,0 +1,31 @@
+---
+# Copy to inventory/group_vars/all/local.yml (git-ignored) and edit. Loaded
+# after main.yml for every host. Non-secret, site-specific values only:
+# secrets come from the environment or a vault, never from this file.
+#
+# Do NOT set these with -e on the command line: extra vars have the highest
+# precedence in Ansible and silently override every reviewed default.
+
+# Extra names/addresses for the API server certificate, e.g. the Hyper-V
+# host's LAN address when using prep-hyperv-host.ps1 -ApiServerForwardTo.
+# rke2_tls_san:
+#   - "lab-host.example.internal"
+
+# Where the admin kubeconfig is written on the controller (default
+# ~/.kube/config; a previous file is backed up).
+# rke2_kubeconfig_dest: "~/.kube/iotee-pc.yaml"
+
+# REQUIRED before a fresh site-rke2.yml run: inspect each node with lsblk and
+# name only the dedicated, blank Layer 0 disk. Use inventory/host_vars/<node>.yml
+# if paths differ. Current lab VMs have /dev/sdb, but do not assume that on a
+# copied deployment. The play refuses disks below 40 GiB, existing RKE2 data,
+# another filesystem, and unknown signatures. Formatting asks for a typed
+# confirmation separately on every blank node; no approval value is stored.
+# rke2_data_device: /dev/sdb
+# rke2_data_min_size_gb: 40
+
+# The primary CNI defaults to Cilium. Changing the value is a build-time
+# choice; the play refuses a different CNI on a running cluster.
+# Fresh-cluster alternatives only; never change the primary CNI in place.
+# rke2_cni: cilium
+# rke2_ingress_nginx_enabled: false

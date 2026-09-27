@@ -7,6 +7,13 @@
 # server audit logging, restricted Pod Security Admission cluster-wide, and
 # default-deny NetworkPolicies in the system namespaces.
 profile: "cis"
+cni: "{{ rke2_cni }}"
+{% if not rke2_ingress_nginx_enabled | bool %}
+# APISIX/another reviewed ingress is installed later; avoid the bundled
+# ingress-nginx chart on a new cluster.
+disable:
+  - rke2-ingress-nginx
+{% endif %}
 # Pod Security Standards: "restricted" enforced everywhere except the system
 # namespaces listed in this file (rendered from rke2-pss.yaml.j2).
 pod-security-admission-config-file: /etc/rancher/rke2/rke2-pss.yaml

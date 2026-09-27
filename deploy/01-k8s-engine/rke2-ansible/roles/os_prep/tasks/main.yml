@@ -17,6 +17,9 @@
     update_cache: true
     cache_valid_time: 3600
 
+- name: Prepare the explicitly selected RKE2 data disk before installation
+  ansible.builtin.import_tasks: data_disk.yml
+
 # ----- Kernel modules --------------------------------------------------------
 - name: Load kernel modules at boot
   ansible.builtin.copy:
