@@ -67,10 +67,12 @@ operation.
 
 HAProxy is an optional external load-balancer package for a topology that
 needs it, such as a future multi-server control plane. It is not part of the
-single-host lab. RKE2 currently supplies ingress-nginx; a separate NGINX
-installation is not a default step. If APISIX and NGINX coexist, document
-their distinct traffic roles and test the handoff. Removing the bundled
-ingress requires a fresh-cluster profile or a separately reviewed migration.
+single-host lab. The current lab runs RKE2's bundled ingress-nginx, but
+fresh Layer 1 installations disable it so ingress can be supplied by a
+separately installed, replaceable gateway package. If APISIX and NGINX
+coexist, document their distinct traffic roles and test the handoff.
+Removing ingress-nginx from the running lab requires a separately reviewed
+migration; the Layer 1 guard prevents a routine rerun from doing it.
 
 CI runs static and offline checks only; it never applies infrastructure.
 The Layer 0 `-RunTofu` option additionally runs OpenTofu in a temporary copy.

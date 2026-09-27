@@ -23,9 +23,9 @@
       ansible.builtin.assert:
         that:
           - rke2_cni == 'canal'
-          - rke2_ingress_nginx_enabled | bool
+          - not (rke2_ingress_nginx_enabled | bool)
           - "'cni: \"canal\"' in rendered_server_config"
-          - "'rke2-ingress-nginx' not in rendered_server_config"
+          - "'- rke2-ingress-nginx' in rendered_server_config"
           - rke2_data_device == ''
           - rke2_data_min_size_gb | int == 40
         quiet: true

@@ -14,7 +14,10 @@ rke2_version: "v1.35.7+rke2r1"
 # Select the primary CNI before first boot. RKE2 does not support changing it
 # on a running cluster. Istio Ambient, if later selected, is a separate layer.
 rke2_cni: canal
-rke2_ingress_nginx_enabled: true
+# Keep the ingress implementation outside the Kubernetes-engine package.
+# The running 2026-09-27 lab predates this default and needs an explicit
+# local override of true for read-only checks or a reviewed ingress migration.
+rke2_ingress_nginx_enabled: false
 
 # RKE2's data directory must live on a dedicated disk before install.
 # Set the actual device in ignored inventory/group_vars/all/local.yml or
