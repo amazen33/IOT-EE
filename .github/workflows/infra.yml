@@ -56,4 +56,6 @@ jobs:
           curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.7.0/kubeconform-linux-amd64.tar.gz | tar xz kubeconform
           sudo mv kubeconform /usr/local/bin/
       - name: Render and validate the add-on manifests
-        run: kubectl kustomize deploy/k8s | kubeconform -strict -summary -
+        run: |
+          kubectl kustomize deploy/k8s | kubeconform -strict -summary -
+          kubeconform -strict -summary deploy/k8s/tests/smoke.yaml

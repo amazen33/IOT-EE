@@ -74,6 +74,15 @@ def main() -> None:
     require(start in ipaddress.ip_network("10.20.0.0/24")
             and end in ipaddress.ip_network("10.20.0.0/24"),
             "lab LoadBalancer pool must remain within its documented network")
+    smoke = [doc for doc in yaml.safe_load_all(
+        (ROOT / "tests" / "smoke.yaml").read_text(encoding="utf-8")) if doc]
+    require({doc["kind"] for doc in smoke} == {"Namespace", "Deployment", "Service"},
+            "smoke test must be an isolated namespace, workload and LoadBalancer Service")
+    smoke_namespace = next(doc for doc in smoke if doc["kind"] == "Namespace")
+    require(smoke_namespace["metadata"]["labels"]["pod-security.kubernetes.io/enforce"] == "restricted",
+            "smoke workload must run under restricted Pod Security")
+    smoke_service = next(doc for doc in smoke if doc["kind"] == "Service")
+    require(smoke_service["spec"]["type"] == "LoadBalancer", "smoke must exercise kube-vip")
     print(f"Layer 2 offline checks passed: {len(files)} local files, {len(resources)} resources.")
 
 
