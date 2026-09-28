@@ -30,8 +30,9 @@ the render. No test contacts a cluster or applies resources.
 
 ## Lab preflight and reviewed install
 
-The current lab has three Ready RKE2 nodes and `eth0`, but this package has
-**not** been installed. Before an apply, verify that the nodes, API, pool,
+The current lab has three Ready RKE2 nodes and `eth0`. This package was
+installed and smoke-tested there on 2026-09-28; see
+`evidence/2026-09-28-hyperv-lab.md`. Before another apply, verify the nodes, API, pool,
 and existing LoadBalancer controllers still match the review:
 
 ```bash
@@ -47,18 +48,19 @@ kubectl apply --dry-run=server -f /tmp/layer2-reviewed.yaml
 
 Review the rendered file and diff, then apply it only through the separately
 approved infrastructure gate. After applying, wait for the cloud-controller
-Deployment and kube-vip DaemonSet to become available, create a temporary
-restricted-Pod-Security echo Service of type `LoadBalancer`, and prove it
-receives a pool address that answers from the Hyper-V host. Record the
-address, response, component logs, and cleanup. The lab's Windows NAT does
-not make that address reachable from the LAN without a separately reviewed
-NAT mapping and firewall rule.
+Deployment and kube-vip DaemonSet to become available. Apply the included
+`tests/smoke.yaml` in its own restricted-Pod-Security namespace; prove that
+its LoadBalancer Service receives a pool address and answers `layer2-ok`
+from the Hyper-V host. Record the address, response, component logs, then
+remove the smoke manifest. The lab's Windows NAT does not make that address
+reachable from the LAN without a separately reviewed NAT mapping and
+firewall rule.
 
 Rollback is a reviewed `kubectl delete -f` of the same rendered manifest,
 after checking whether any Services still depend on the assigned addresses.
 Removing the controller while such Services are in use causes traffic loss.
 
-The cluster has one physical host and one control plane. A successful
-LoadBalancer smoke test would prove this lab package works, not production
-high availability or disaster recovery. Storage and secrets are separate
+The cluster has one physical host and one control plane. The 2026-09-28
+LoadBalancer smoke test shows that this lab package works; it does not show
+production high availability or disaster recovery. Storage and secrets are separate
 Layer 2 packages still to be designed and tested.
