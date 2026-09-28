@@ -60,7 +60,7 @@ services/<name>/            autonomous Java services
   └─ correlation/            framework-free correlation-ID context
 adapters/<provider>/        real-backend implementations behind contracts (M10+; none exist in Java yet)
   └─ (e.g. worm_s3)         built from spec/ patterns; isolated, optional deps
-deploy/                     private-cloud IaC in layers: 00-infra/private-hyperv (L0: Hyper-V VMs, Terraform), 01-k8s-engine/rke2-ansible (L1: Ansible, CIS-hardened RKE2 only), k8s/ (L2: add-ons); see deploy/README.md
+deploy/                     private-cloud IaC in standalone layer packages: 00-infra/private-hyperv (L0: Hyper-V VMs, OpenTofu), 01-k8s-engine/rke2-ansible (L1: Ansible, CIS-hardened RKE2 only), k8s/ (L2: kube-vip LoadBalancer add-on; storage and secrets packages not designed yet); each has its own offline test, lab evidence is recorded per package; see deploy/README.md
 spec/                       frozen M0–M8 Python reference implementation (not the platform)
 docs/                       ADRs, architecture guides, inventories
   └─ adr/                   numbered ADRs (0001–present) + README.md convention
@@ -71,12 +71,13 @@ docs/, CLAUDE.md, README.md, .github/workflows/ stay at the repository root — 
 
 ## Gates
 
-Both gates run in CI on every change. Both must pass for changes touching their scope.
+The two platform gates run in CI on every change; the infrastructure gate runs on changes under deploy/. Each gate must pass for changes touching its scope.
 
 | Gate | Command | Scope |
 | --- | --- | --- |
 | Python spec gate | `python spec/scripts/check.py` | The frozen M0–M8 reference implementation only. Mechanical isolation checks + full regression suite. |
 | Java platform gate | `mvn -f pom.xml verify` | contracts/, architecture/, services/*, adapters/*. Compile + unit tests + ArchUnit boundary rules. |
+| Infrastructure gate | `.github/workflows/infra.yml` (each layer's own test: `tests/verify.ps1`, `tests/verify-layer1.sh`, `tests/verify-layer2.py`, plus render and schema checks) | deploy/ only. Static checks; never reaches a host or cluster. Live lab runs are recorded as evidence, never as CI results. |
 
 After every stage run its complete relevant gate and the full regression gate. A stage requires code, tests, docs, deployment artifacts, and passing gates; document unavailable external verification as blocked, not passed.
 

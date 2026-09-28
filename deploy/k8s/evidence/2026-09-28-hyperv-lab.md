@@ -32,7 +32,15 @@ ingress-nginx; it predates the fresh-install default that disables that
 chart in PR #33. This smoke test used port 8080 and did not migrate ingress.
 Review the deprecated upstream affinity label at the next component upgrade.
 
-Not established: a fresh Layer 1 health report for this apply, full-pool
+Approval and records: the apply above followed the server-side dry run and
+review described in this file. No separate written approval record, SHA-256
+of the applied render, or kube-vip/cloud-controller log excerpt was captured
+for this run; none is reconstructed here. The
+package README's post-apply steps ask for component logs, so the next
+Layer 2 apply must capture them together with the render digest.
+
+Not established: a fresh Layer 1 health report for this apply, component
+logs and a digest of the applied render, full-pool
 conflict detection, failover under node loss, sustained throughput, pool
 exhaustion behavior, LAN ingress through Windows NAT, upgrades/rollback,
 storage or secrets readiness, host redundancy, and production support.

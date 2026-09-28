@@ -60,7 +60,7 @@ Rollback is a reviewed `kubectl delete -f` of the same rendered manifest,
 after checking whether any Services still depend on the assigned addresses.
 Removing the controller while such Services are in use causes traffic loss.
 
-The cluster has one physical host and one control plane. A successful
-LoadBalancer smoke test would prove this lab package works, not production
-high availability or disaster recovery. Storage and secrets are separate
+The cluster has one physical host and one control plane. The 2026-09-28
+LoadBalancer smoke test shows that this lab package works; it does not show
+production high availability or disaster recovery. Storage and secrets are separate
 Layer 2 packages still to be designed and tested.

@@ -57,5 +57,6 @@ jobs:
           sudo mv kubeconform /usr/local/bin/
       - name: Render and validate the add-on manifests
         run: |
-          kubectl kustomize deploy/k8s | kubeconform -strict -summary -
-          kubeconform -strict -summary deploy/k8s/tests/smoke.yaml
+          # Schemas for the lab's Kubernetes minor (RKE2 v1.35.x).
+          kubectl kustomize deploy/k8s | kubeconform -kubernetes-version 1.35.0 -strict -summary -
+          kubeconform -kubernetes-version 1.35.0 -strict -summary deploy/k8s/tests/smoke.yaml
